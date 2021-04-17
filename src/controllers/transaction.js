@@ -98,7 +98,7 @@ module.exports = {
               const data = {
                 kode_plant: kode,
                 status: 'Belum Upload',
-                documentDate: results.postDokumen,
+                documentDate: new Date(moment().subtract(1, 'days')),
                 access: 'unlock',
                 jenis_dokumen: tipeValue === 'daily' ? 'daily' : 'monthly',
                 tipe: 'sa'
@@ -149,7 +149,7 @@ module.exports = {
               const data = {
                 kode_plant: kode,
                 status: 'Belum Upload',
-                documentDate: results.postDokumen,
+                documentDate: new Date(moment().subtract(1, 'days')),
                 access: 'unlock',
                 jenis_dokumen: tipeValue === 'daily' ? 'daily' : 'monthly',
                 tipe: 'kasir'

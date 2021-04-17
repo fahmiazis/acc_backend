@@ -8,7 +8,7 @@ const cron = require('node-cron')
 const app = express()
 const server = require('http').createServer(app)
 
-const { APP_PORT } = process.env
+const { APP_PORT, APP_URL } = process.env
 
 app.use(bodyParser.urlencoded({ extended: false }))
 app.use(cors())
@@ -65,5 +65,5 @@ app.get('*', (req, res) => {
 })
 
 server.listen(APP_PORT, () => {
-  console.log(`App is running on port ${APP_PORT}`)
+  console.log(`App is running on port ${APP_URL}`)
 })

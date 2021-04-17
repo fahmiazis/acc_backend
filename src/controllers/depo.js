@@ -16,7 +16,7 @@ module.exports = {
     try {
       const level = req.user.level
       const schema = joi.object({
-        kode_depo: joi.number().required(),
+        kode_depo: joi.string().required(),
         nama_depo: joi.string().required(),
         home_town: joi.string().required(),
         channel: joi.string().required(),
@@ -83,7 +83,7 @@ module.exports = {
       const level = req.user.level
       const id = req.params.id
       const schema = joi.object({
-        kode_depo: joi.number().required(),
+        kode_depo: joi.string().required(),
         nama_depo: joi.string(),
         home_town: joi.string(),
         channel: joi.string(),
