@@ -6,12 +6,11 @@ const joi = require('joi')
 const uploadHelper = require('../helpers/upload')
 const multer = require('multer')
 const fs = require('fs')
-// const vs = require('fs-extra')
-// const { APP_URL } = process.env
-// const excel = require('exceljs')
+const vs = require('fs-extra')
+const { APP_URL } = process.env
 const mailer = require('../helpers/mailer')
 const moment = require('moment')
-// const xlsx = require('xlsx')
+const xlsx = require('xlsx')
 
 module.exports = {
   dashboard: async (req, res) => {
@@ -74,12 +73,12 @@ module.exports = {
           const results = await documents.findAndCountAll({
             where: {
               [Op.or]: [
-                { nama_dokumen: { [Op.like]: `%${searchValue}%` } },
-                { jenis_dokumen: { [Op.like]: `%${tipeValue}%` } }
+                { nama_dokumen: { [Op.like]: `%${searchValue}%` } }
               ],
               [Op.and]: [
                 { status_depo: cabang },
-                { uploadedBy: 'sa' }
+                { uploadedBy: 'sa' },
+                { jenis_dokumen: { [Op.like]: `%${tipeValue}%` } }
               ],
               [Op.not]: { status: 'inactive' }
             },
@@ -127,12 +126,12 @@ module.exports = {
           const results = await documents.findAndCountAll({
             where: {
               [Op.or]: [
-                { nama_dokumen: { [Op.like]: `%${searchValue}%` } },
-                { jenis_dokumen: { [Op.like]: `%${tipeValue}%` } }
+                { nama_dokumen: { [Op.like]: `%${searchValue}%` } }
               ],
               [Op.and]: [
                 { status_depo: cabang },
-                { uploadedBy: 'kasir' }
+                { uploadedBy: 'kasir' },
+                { jenis_dokumen: { [Op.like]: `%${tipeValue}%` } }
               ],
               [Op.not]: { status: 'inactive' }
             },
@@ -912,7 +911,7 @@ module.exports = {
                   from: `${result.email_ho_pic}`,
                   replyTo: `${result.email_ho_pic}`,
                   to: `${result.email_aos}`,
-                  cc: `${result.email_sa_kasir}`,
+                  cc: `${result.email_sa_kasir}, ${result.email_ho_pic}`,
                   subject: 'Rejected Dokumen',
                   html: `<body>
                   <div style="margin-top: 20px; margin-bottom: 20px;">Dear Bapak/Ibu AOS</div>
@@ -941,7 +940,7 @@ module.exports = {
                           <td style='border: 1px solid black;'>${dok.alasan}</td>
                         </tr>
                   </table>
-                  <a href="http://google.com">With the following link</a>
+                  <a href="http://trial.pinusmerahabadi.co.id:3000/">With the following link</a>
                   <div style="margin-top: 20px;">Thank you.</div>
               </body>
                   `
@@ -992,6 +991,7 @@ module.exports = {
   reportDokumen: async (req, res) => {
     // try {
     const level = req.user.level
+    const depoKode = req.user.kode
     const { from, to, tipe } = req.query
     let tipeValue = ''
     let timeFrom = ''
@@ -1011,18 +1011,20 @@ module.exports = {
     } else {
       tipeValue = tipe || 'daily'
     }
-    const now = timeFrom === '' ? new Date(moment().utc().format('YYYY-MM-DD')) : new Date(moment(timeFrom).utc().format('YYYY-MM-DD'))
-    const tomo = timeTo === '' ? new Date(moment().utc().format('YYYY-MM-DD 24:00:00')) : new Date(moment(timeTo).utc().format('YYYY-MM-DD 24:00:00'))
+    const now = timeFrom === '' ? new Date(moment().format('YYYY-MM-DD')) : new Date(moment(timeFrom).format('YYYY-MM-DD'))
+    const tomo = timeTo === '' ? new Date(moment().format('YYYY-MM-DD 24:00:00')) : new Date(moment(timeTo).format('YYYY-MM-DD 24:00:00'))
     const schema = joi.object({
-      kode_plant: joi.string(),
-      pic: joi.string()
+      kode_plant: joi.string().allow(''),
+      pic: joi.string().allow('')
     })
     const { value: results, error } = schema.validate(req.body)
     if (error) {
       return response(res, 'Error', { error: error.message }, 404, false)
     } else {
-      if (level === 1) {
-        if (results.pic) {
+      const first = ['No', 'Nama Depo', 'Kode Plant', 'Profit Center', 'Kode SAP 1', 'Tanggal Dokumen', 'Tanggal Upload']
+      const last = ['Jumlah File Upload', 'Persentase', 'Status', 'Uploaded By']
+      if (level === 1 || level === 2 || level === 3) {
+        if (results.pic !== '') {
           const findPic = await pic.findAll({
             where: {
               pic: { [Op.like]: `%${results.pic}%` }
@@ -1035,7 +1037,6 @@ module.exports = {
                 depos.push(x)
               )
             })
-            console.log(depos[0].kode_depo)
             // response(res, 'list dokumen', { findPic })
             if (depos.length > 0) {
               const sa = []
@@ -1075,8 +1076,7 @@ module.exports = {
                         [Op.and]: [
                           { jenis_dokumen: { [Op.like]: `%${tipeValue}%` } },
                           { uploadedBy: 'sa' }
-                        ],
-                        [Op.not]: { status: 'inactive' }
+                        ]
                       }
                     }
                   ]
@@ -1120,8 +1120,7 @@ module.exports = {
                         [Op.and]: [
                           { jenis_dokumen: { [Op.like]: `%${tipeValue}%` } },
                           { uploadedBy: 'kasir' }
-                        ],
-                        [Op.not]: { status: 'inactive' }
+                        ]
                       }
                     }
                   ]
@@ -1132,35 +1131,124 @@ module.exports = {
               }
               if (kasir.length > 0 || sa.length > 0) {
                 const data = []
-                const body = []
-                sa.map(x => {
+                sa.map(item => {
                   return (
-                    data.push(x.dokumen.length === undefined ? 0 : x.dokumen.length)
+                    data.push(item.dokumen.length)
                   )
                 })
-                kasir.map(x => {
+                kasir.map(item => {
                   return (
-                    data.push(x.dokumen.length)
+                    data.push(item.dokumen.length)
                   )
                 })
                 const resu = []
-                for (let i = 0; i <= Math.max(...data) - 1; i++) {
-                  resu.push(i)
+                for (let i = 1; i <= Math.max(...data); i++) {
+                  resu.push(`${i}`)
                 }
-                const header = ['No', 'PIC', 'Nama Depo', 'Kode Plant', 'Profit Center', 'Kode SAP 1', 'Tanggal Dokumen', 'Tanggal Upload', resu.length !== 0 && resu.map(item => item + 1) + '', 'Jumlah File Upload', 'Persentase', 'Status']
-                console.log(header)
-                return response(res, 'list dokumen', { findPic, sa, kasir })
+                const saBody = []
+                const kasirBody = []
+                for (let i = 0; i < sa.length; i++) {
+                  for (let j = 0; j < sa[i].active.length; j++) {
+                    const temp = []
+                    temp.push(sa[i].active.indexOf(sa[i].active[j]) + 1)
+                    temp.push(sa[i].nama_depo)
+                    temp.push(sa[i].kode_plant)
+                    temp.push(sa[i].profit_center)
+                    temp.push(sa[i].kode_sap_1)
+                    temp.push(moment(sa[i].active[j].documentDate).format('DD MMMM YYYY'))
+                    temp.push(moment(sa[i].active[j].createdAt).format('DD MMMM YYYY'))
+                    for (let d = 0; d < resu.length; d++) {
+                      const go = sa[i].dokumen[d] === undefined ? 'a' : sa[i].dokumen[d].nama_dokumen
+                      if (sa[i].active[j].doc.length > 0) {
+                        if (sa[i].active[j].doc[d] !== undefined) {
+                          sa[i].active[j].doc.find(({ dokumen }) => dokumen === go) !== undefined
+                            ? temp.push(sa[i].active[j].doc[d].status_dokumen === 1 ? 'O' : sa[i].active[j].doc[d].status_dokumen === 0 ? 'X' : sa[i].active[j].doc[d].status_dokumen === 3 ? 'V' : sa[i].active[j].doc[d].status_dokumen === 2 ? 'O' : sa[i].active[j].doc[d].status_dokumen === 4 ? 'Telat kirim' : '-')
+                            : temp.push('-')
+                        } else {
+                          temp.push('-')
+                        }
+                      } else {
+                        temp.push('-')
+                      }
+                    }
+                    temp.push(sa[i].dokumen.length)
+                    temp.push(Math.round((sa[i].active[j].progress / sa[i].dokumen.length) * 100) + '%')
+                    if (sa[i].active[j].doc.length === 0) {
+                      temp.push('Belum Upload')
+                    } else {
+                      temp.push(((sa[i].active[j].progress / sa[i].dokumen.length) * 100) === 100 ? 'Done' : ((sa[i].active[j].progress / sa[i].dokumen.length) * 100) < 100 ? 'Kurang Upload' : '')
+                    }
+                    temp.push(sa[i].active[j].tipe)
+                    saBody.push(temp)
+                  }
+                }
+                for (let i = 0; i < kasir.length; i++) {
+                  data.push(kasir[i].dokumen.length)
+                  for (let j = 0; j < kasir[i].active.length; j++) {
+                    const temp = []
+                    temp.push(kasir[i].active.indexOf(kasir[i].active[j]) + saBody.length + 1)
+                    temp.push(kasir[i].nama_depo)
+                    temp.push(kasir[i].kode_plant)
+                    temp.push(kasir[i].profit_center)
+                    temp.push(kasir[i].kode_sap_1)
+                    temp.push(moment(kasir[i].active[j].documentDate).format('DD MMMM YYYY'))
+                    temp.push(moment(kasir[i].active[j].createdAt).format('DD MMMM YYYY'))
+                    for (let d = 0; d < resu.length; d++) {
+                      if (kasir[i].active[j].doc.length > 0) {
+                        const go = kasir[i].dokumen[d] === undefined ? 'a' : kasir[i].dokumen[d].nama_dokumen
+                        if (kasir[i].active[j].doc[d] !== undefined) {
+                          kasir[i].active[j].doc.find(({ dokumen }) => dokumen === go) !== undefined
+                            ? temp.push(kasir[i].active[j].doc[d].status_dokumen === 1 ? 'O' : kasir[i].active[j].doc[d].status_dokumen === 0 ? 'X' : kasir[i].active[j].doc[d].status_dokumen === 3 ? 'V' : kasir[i].active[j].doc[d].status_dokumen === 2 ? 'O' : kasir[i].active[j].doc[d].status_dokumen === 4 ? 'Telat kirim' : '')
+                            : temp.push('-')
+                        } else {
+                          temp.push('-')
+                        }
+                      } else {
+                        temp.push('-')
+                      }
+                    }
+                    temp.push(kasir[i].dokumen.length)
+                    temp.push(Math.round((kasir[i].active[j].progress / kasir[i].dokumen.length) * 100) + '%')
+                    if (kasir[i].active[j].doc.length === 0) {
+                      temp.push('Belum Upload')
+                    } else {
+                      temp.push(((kasir[i].active[j].progress / kasir[i].dokumen.length) * 100) === 100 ? 'Done' : ((kasir[i].active[j].progress / kasir[i].dokumen.length) * 100) < 100 ? 'Kurang Upload' : '')
+                    }
+                    temp.push(kasir[i].active[j].tipe)
+                    kasirBody.push(temp)
+                  }
+                }
+                const header = first.concat(resu, last)
+                const body = [header, ...saBody, ...kasirBody]
+                const wb = xlsx.utils.book_new()
+                const name = new Date().getTime().toString().concat('.xlsx')
+                wb.Props = {
+                  Title: 'Report',
+                  Author: 'Team Accounting',
+                  CreatedDate: new Date()
+                }
+                const ws = xlsx.utils.aoa_to_sheet(body)
+                wb.Sheets['Sheet 1'] = ws
+                xlsx.utils.book_append_sheet(wb, ws, 'Results')
+                await xlsx.writeFile(wb, name, { type: 'file' })
+                vs.move(name, `assets/exports/${name}`, function (err) {
+                  if (err) {
+                    throw err
+                  }
+                  console.log('success')
+                })
+                return response(res, 'success', { link: `${APP_URL}/download/${name}` })
               } else {
                 return response(res, 'list dokumen', { findPic, sa, kasir })
               }
             } else {
-              return response(res, 'depo no found', {}, 404, false)
+              return response(res, 'depo not found', {}, 404, false)
             }
           } else {
             return response(res, 'failed to get report', {}, 404, false)
           }
-        } else if (results.kode_plant) {
-          const result = await depo.findAll({
+        } else if (results.kode_plant !== '') {
+          const sa = await depo.findAll({
             where: {
               kode_plant: results.kode_plant
             },
@@ -1171,7 +1259,8 @@ module.exports = {
                 where: {
                   [Op.and]: [
                     { kode_plant: results.kode_plant },
-                    { jenis_dokumen: { [Op.like]: `%${tipeValue}%` } }
+                    { jenis_dokumen: { [Op.like]: `%${tipeValue}%` } },
+                    { tipe: 'sa' }
                   ],
                   createdAt: {
                     [Op.lt]: tomo,
@@ -1185,32 +1274,396 @@ module.exports = {
                     limit: 50
                   }
                 ]
+              },
+              {
+                model: documents,
+                as: 'dokumen',
+                where: {
+                  [Op.and]: [
+                    { jenis_dokumen: { [Op.like]: `%${tipeValue}%` } },
+                    { uploadedBy: 'sa' }
+                  ]
+                }
               }
             ]
           })
-          if (result) {
-            const findPic = await pic.findOne({
-              where: {
-                kode_depo: results.kode_depo
+          const kasir = await depo.findAll({
+            where: {
+              kode_plant: results.kode_plant
+            },
+            include: [
+              {
+                model: activity,
+                as: 'active',
+                where: {
+                  [Op.and]: [
+                    { kode_plant: results.kode_plant },
+                    { jenis_dokumen: { [Op.like]: `%${tipeValue}%` } },
+                    { tipe: 'kasir' }
+                  ],
+                  createdAt: {
+                    [Op.lt]: tomo,
+                    [Op.gt]: now
+                  }
+                },
+                include: [
+                  {
+                    model: Path,
+                    as: 'doc',
+                    limit: 50
+                  }
+                ]
+              },
+              {
+                model: documents,
+                as: 'dokumen',
+                where: {
+                  [Op.and]: [
+                    { jenis_dokumen: { [Op.like]: `%${tipeValue}%` } },
+                    { uploadedBy: 'kasir' }
+                  ]
+                }
               }
+            ]
+          })
+          if (sa.length > 0 || kasir.length > 0) {
+            const data = []
+            sa.map(item => {
+              return (
+                data.push(item.dokumen.length)
+              )
             })
-            if (findPic) {
-              return response(res, 'list dokumen', { findPic, result })
-            } else {
-              return response(res, 'failed to get report', {}, 404, false)
+            kasir.map(item => {
+              return (
+                data.push(item.dokumen.length)
+              )
+            })
+            const resu = []
+            for (let i = 1; i <= Math.max(...data); i++) {
+              resu.push(`${i}`)
             }
+            const saBody = []
+            const kasirBody = []
+            for (let i = 0; i < sa.length; i++) {
+              for (let j = 0; j < sa[i].active.length; j++) {
+                const temp = []
+                temp.push(sa[i].active.indexOf(sa[i].active[j]) + 1)
+                temp.push(sa[i].nama_depo)
+                temp.push(sa[i].kode_plant)
+                temp.push(sa[i].profit_center)
+                temp.push(sa[i].kode_sap_1)
+                temp.push(moment(sa[i].active[j].documentDate).format('DD MMMM YYYY'))
+                temp.push(moment(sa[i].active[j].createdAt).format('DD MMMM YYYY'))
+                for (let d = 0; d < resu.length; d++) {
+                  const go = sa[i].dokumen[d] === undefined ? 'a' : sa[i].dokumen[d].nama_dokumen
+                  if (sa[i].active[j].doc.length > 0) {
+                    if (sa[i].active[j].doc[d] !== undefined) {
+                      sa[i].active[j].doc.find(({ dokumen }) => dokumen === go) !== undefined
+                        ? temp.push(sa[i].active[j].doc[d].status_dokumen === 1 ? 'O' : sa[i].active[j].doc[d].status_dokumen === 0 ? 'X' : sa[i].active[j].doc[d].status_dokumen === 3 ? 'V' : sa[i].active[j].doc[d].status_dokumen === 2 ? 'O' : sa[i].active[j].doc[d].status_dokumen === 4 ? 'Telat kirim' : '-')
+                        : temp.push('-')
+                    } else {
+                      temp.push('-')
+                    }
+                  } else {
+                    temp.push('-')
+                  }
+                }
+                temp.push(sa[i].dokumen.length)
+                temp.push(Math.round((sa[i].active[j].progress / sa[i].dokumen.length) * 100) + '%')
+                if (sa[i].active[j].doc.length === 0) {
+                  temp.push('Belum Upload')
+                } else {
+                  temp.push(((sa[i].active[j].progress / sa[i].dokumen.length) * 100) === 100 ? 'Done' : ((sa[i].active[j].progress / sa[i].dokumen.length) * 100) < 100 ? 'Kurang Upload' : '')
+                }
+                temp.push(sa[i].active[j].tipe)
+                saBody.push(temp)
+              }
+            }
+            for (let i = 0; i < kasir.length; i++) {
+              data.push(kasir[i].dokumen.length)
+              for (let j = 0; j < kasir[i].active.length; j++) {
+                const temp = []
+                temp.push(kasir[i].active.indexOf(kasir[i].active[j]) + saBody.length + 1)
+                temp.push(kasir[i].nama_depo)
+                temp.push(kasir[i].kode_plant)
+                temp.push(kasir[i].profit_center)
+                temp.push(kasir[i].kode_sap_1)
+                temp.push(moment(kasir[i].active[j].documentDate).format('DD MMMM YYYY'))
+                temp.push(moment(kasir[i].active[j].createdAt).format('DD MMMM YYYY'))
+                for (let d = 0; d < resu.length; d++) {
+                  if (kasir[i].active[j].doc.length > 0) {
+                    const go = kasir[i].dokumen[d] === undefined ? 'a' : kasir[i].dokumen[d].nama_dokumen
+                    if (kasir[i].active[j].doc[d] !== undefined) {
+                      kasir[i].active[j].doc.find(({ dokumen }) => dokumen === go) !== undefined
+                        ? temp.push(kasir[i].active[j].doc[d].status_dokumen === 1 ? 'O' : kasir[i].active[j].doc[d].status_dokumen === 0 ? 'X' : kasir[i].active[j].doc[d].status_dokumen === 3 ? 'V' : kasir[i].active[j].doc[d].status_dokumen === 2 ? 'O' : kasir[i].active[j].doc[d].status_dokumen === 4 ? 'Telat kirim' : '')
+                        : temp.push('-')
+                    } else {
+                      temp.push('-')
+                    }
+                  } else {
+                    temp.push('-')
+                  }
+                }
+                temp.push(kasir[i].dokumen.length)
+                temp.push(Math.round((kasir[i].active[j].progress / kasir[i].dokumen.length) * 100) + '%')
+                if (kasir[i].active[j].doc.length === 0) {
+                  temp.push('Belum Upload')
+                } else {
+                  temp.push(((kasir[i].active[j].progress / kasir[i].dokumen.length) * 100) === 100 ? 'Done' : ((kasir[i].active[j].progress / kasir[i].dokumen.length) * 100) < 100 ? 'Kurang Upload' : '')
+                }
+                temp.push(kasir[i].active[j].tipe)
+                kasirBody.push(temp)
+              }
+            }
+            const header = first.concat(resu, last)
+            const body = [header, ...saBody, ...kasirBody]
+            const wb = xlsx.utils.book_new()
+            const name = new Date().getTime().toString().concat('.xlsx')
+            wb.Props = {
+              Title: 'Report',
+              Author: 'Team Accounting',
+              CreatedDate: new Date()
+            }
+            const ws = xlsx.utils.aoa_to_sheet(body)
+            wb.Sheets['Sheet 1'] = ws
+            xlsx.utils.book_append_sheet(wb, ws, 'Results')
+            await xlsx.writeFile(wb, name, { type: 'file' })
+            vs.move(name, `assets/exports/${name}`, function (err) {
+              if (err) {
+                throw err
+              }
+              console.log('success')
+            })
+            return response(res, 'success', { link: `${APP_URL}/download/${name}` })
           } else {
             return response(res, 'failed to get report', {}, 404, false)
           }
         }
+      } else if (level === 4) {
+        console.log(depoKode)
+        const sa = await depo.findAll({
+          where: {
+            kode_plant: depoKode
+          },
+          include: [
+            {
+              model: activity,
+              as: 'active',
+              where: {
+                [Op.and]: [
+                  { kode_plant: depoKode },
+                  { jenis_dokumen: { [Op.like]: `%${tipeValue}%` } },
+                  { tipe: 'sa' }
+                ],
+                createdAt: {
+                  [Op.lt]: tomo,
+                  [Op.gt]: now
+                }
+              },
+              include: [
+                {
+                  model: Path,
+                  as: 'doc',
+                  limit: 50
+                }
+              ]
+            },
+            {
+              model: documents,
+              as: 'dokumen',
+              where: {
+                [Op.and]: [
+                  { jenis_dokumen: { [Op.like]: `%${tipeValue}%` } },
+                  { uploadedBy: 'sa' }
+                ]
+              }
+            }
+          ]
+        })
+        if (sa.length > 0) {
+          const data = []
+          sa.map(item => {
+            return (
+              data.push(item.dokumen.length)
+            )
+          })
+          const resu = []
+          for (let i = 1; i <= Math.max(...data); i++) {
+            resu.push(`${i}`)
+          }
+          const saBody = []
+          for (let i = 0; i < sa.length; i++) {
+            for (let j = 0; j < sa[i].active.length; j++) {
+              const temp = []
+              temp.push(sa[i].active.indexOf(sa[i].active[j]) + 1)
+              temp.push(sa[i].nama_depo)
+              temp.push(sa[i].kode_plant)
+              temp.push(sa[i].profit_center)
+              temp.push(sa[i].kode_sap_1)
+              temp.push(moment(sa[i].active[j].documentDate).format('DD MMMM YYYY'))
+              temp.push(moment(sa[i].active[j].createdAt).format('DD MMMM YYYY'))
+              for (let d = 0; d < resu.length; d++) {
+                const go = sa[i].dokumen[d] === undefined ? 'a' : sa[i].dokumen[d].nama_dokumen
+                if (sa[i].active[j].doc.length > 0) {
+                  if (sa[i].active[j].doc[d] !== undefined) {
+                    sa[i].active[j].doc.find(({ dokumen }) => dokumen === go) !== undefined
+                      ? temp.push(sa[i].active[j].doc[d].status_dokumen === 1 ? 'O' : sa[i].active[j].doc[d].status_dokumen === 0 ? 'X' : sa[i].active[j].doc[d].status_dokumen === 3 ? 'V' : sa[i].active[j].doc[d].status_dokumen === 2 ? 'O' : sa[i].active[j].doc[d].status_dokumen === 4 ? 'Telat kirim' : '-')
+                      : temp.push('-')
+                  } else {
+                    temp.push('-')
+                  }
+                } else {
+                  temp.push('-')
+                }
+              }
+              temp.push(sa[i].dokumen.length)
+              temp.push(Math.round((sa[i].active[j].progress / sa[i].dokumen.length) * 100) + '%')
+              if (sa[i].active[j].doc.length === 0) {
+                temp.push('Belum Upload')
+              } else {
+                temp.push(((sa[i].active[j].progress / sa[i].dokumen.length) * 100) === 100 ? 'Done' : ((sa[i].active[j].progress / sa[i].dokumen.length) * 100) < 100 ? 'Kurang Upload' : '')
+              }
+              temp.push(sa[i].active[j].tipe)
+              saBody.push(temp)
+            }
+          }
+          const header = first.concat(resu, last)
+          const body = [header, ...saBody]
+          const wb = xlsx.utils.book_new()
+          const name = new Date().getTime().toString().concat('.xlsx')
+          wb.Props = {
+            Title: 'Report',
+            Author: 'Team Accounting',
+            CreatedDate: new Date()
+          }
+          const ws = xlsx.utils.aoa_to_sheet(body)
+          wb.Sheets['Sheet 1'] = ws
+          xlsx.utils.book_append_sheet(wb, ws, 'Results')
+          await xlsx.writeFile(wb, name, { type: 'file' })
+          vs.move(name, `assets/exports/${name}`, function (err) {
+            if (err) {
+              throw err
+            }
+            console.log('success')
+          })
+          return response(res, 'success', { link: `${APP_URL}/download/${name}` })
+        } else {
+          return response(res, 'failed to get report', {}, 404, false)
+        }
+      } else if (level === 5) {
+        const kasir = await depo.findAll({
+          where: {
+            kode_plant: depoKode
+          },
+          include: [
+            {
+              model: activity,
+              as: 'active',
+              where: {
+                [Op.and]: [
+                  { kode_plant: depoKode },
+                  { jenis_dokumen: { [Op.like]: `%${tipeValue}%` } },
+                  { tipe: 'kasir' }
+                ],
+                createdAt: {
+                  [Op.lt]: tomo,
+                  [Op.gt]: now
+                }
+              },
+              include: [
+                {
+                  model: Path,
+                  as: 'doc',
+                  limit: 50
+                }
+              ]
+            },
+            {
+              model: documents,
+              as: 'dokumen',
+              where: {
+                [Op.and]: [
+                  { jenis_dokumen: { [Op.like]: `%${tipeValue}%` } },
+                  { uploadedBy: 'kasir' }
+                ]
+              }
+            }
+          ]
+        })
+        if (kasir.length > 0) {
+          const data = []
+          kasir.map(item => {
+            return (
+              data.push(item.dokumen.length)
+            )
+          })
+          const resu = []
+          for (let i = 1; i <= Math.max(...data); i++) {
+            resu.push(`${i}`)
+          }
+          const kasirBody = []
+          for (let i = 0; i < kasir.length; i++) {
+            data.push(kasir[i].dokumen.length)
+            for (let j = 0; j < kasir[i].active.length; j++) {
+              const temp = []
+              temp.push(kasir[i].active.indexOf(kasir[i].active[j]) + 1)
+              temp.push(kasir[i].nama_depo)
+              temp.push(kasir[i].kode_plant)
+              temp.push(kasir[i].profit_center)
+              temp.push(kasir[i].kode_sap_1)
+              temp.push(moment(kasir[i].active[j].documentDate).format('DD MMMM YYYY'))
+              temp.push(moment(kasir[i].active[j].createdAt).format('DD MMMM YYYY'))
+              for (let d = 0; d < resu.length; d++) {
+                if (kasir[i].active[j].doc.length > 0) {
+                  const go = kasir[i].dokumen[d] === undefined ? 'a' : kasir[i].dokumen[d].nama_dokumen
+                  if (kasir[i].active[j].doc[d] !== undefined) {
+                    kasir[i].active[j].doc.find(({ dokumen }) => dokumen === go) !== undefined
+                      ? temp.push(kasir[i].active[j].doc[d].status_dokumen === 1 ? 'O' : kasir[i].active[j].doc[d].status_dokumen === 0 ? 'X' : kasir[i].active[j].doc[d].status_dokumen === 3 ? 'V' : kasir[i].active[j].doc[d].status_dokumen === 2 ? 'O' : kasir[i].active[j].doc[d].status_dokumen === 4 ? 'Telat kirim' : '')
+                      : temp.push('-')
+                  } else {
+                    temp.push('-')
+                  }
+                } else {
+                  temp.push('-')
+                }
+              }
+              temp.push(kasir[i].dokumen.length)
+              temp.push(Math.round((kasir[i].active[j].progress / kasir[i].dokumen.length) * 100) + '%')
+              if (kasir[i].active[j].doc.length === 0) {
+                temp.push('Belum Upload')
+              } else {
+                temp.push(((kasir[i].active[j].progress / kasir[i].dokumen.length) * 100) === 100 ? 'Done' : ((kasir[i].active[j].progress / kasir[i].dokumen.length) * 100) < 100 ? 'Kurang Upload' : '')
+              }
+              temp.push(kasir[i].active[j].tipe)
+              kasirBody.push(temp)
+            }
+          }
+          const header = first.concat(resu, last)
+          const body = [header, ...kasirBody]
+          const wb = xlsx.utils.book_new()
+          const name = new Date().getTime().toString().concat('.xlsx')
+          wb.Props = {
+            Title: 'Report',
+            Author: 'Team Accounting',
+            CreatedDate: new Date()
+          }
+          const ws = xlsx.utils.aoa_to_sheet(body)
+          wb.Sheets['Sheet 1'] = ws
+          xlsx.utils.book_append_sheet(wb, ws, 'Results')
+          await xlsx.writeFile(wb, name, { type: 'file' })
+          vs.move(name, `assets/exports/${name}`, function (err) {
+            if (err) {
+              throw err
+            }
+            console.log('success')
+          })
+          return response(res, 'success', { link: `${APP_URL}/download/${name}` })
+        } else {
+          return response(res, 'failed to get report', {}, 404, false)
+        }
+      } else {
+        return response(res, 'failed to get report', {}, 404, false)
       }
-      // else if (level === 2) {
-
-      // } else if (level === 3) {
-
-      // } else if (level === 4 || level === 6) {
-
-      // }
     }
     // } catch (error) {
     //   return response(res, error.message, {}, 500, false)

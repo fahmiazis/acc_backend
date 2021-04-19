@@ -25,7 +25,7 @@ module.exports = {
               jwt.sign({ id: id, level: user_level, kode: kode_depo, name: username }, `${APP_KEY}`, {
                 expiresIn: '12h'
               }, (_err, token) => {
-                return response(res, 'login success', { user: { id, kode_depo, user_level }, Token: `${token}` })
+                return response(res, 'login success', { user: { id, kode_depo, user_level, username }, Token: `${token}` })
               })
             } else {
               return response(res, 'Wrong password', {}, 400, false)

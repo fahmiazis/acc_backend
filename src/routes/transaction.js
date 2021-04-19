@@ -8,6 +8,6 @@ route.patch('/upload/edit/:id', trans.editUploadDocument)
 route.patch('/approve/:id/:idAct', trans.approveDocument)
 route.patch('/reject/:id/:idAct', trans.rejectDocument)
 route.post('/send/:id', trans.sendMail)
-route.get('/report', trans.reportDokumen)
+route.post('/report', trans.reportDokumen)
 
 module.exports = route

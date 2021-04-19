@@ -127,9 +127,9 @@ module.exports = {
       const result = await pic.findAndCountAll({
         where: {
           [Op.or]: [
-            { pic: { [Op.like]: `${searchValue}` } },
-            { kode_depo: { [Op.like]: `${searchValue}` } },
-            { spv: { [Op.like]: `${searchValue}` } },
+            { pic: { [Op.like]: `%${searchValue}%` } },
+            { kode_depo: { [Op.like]: `%${searchValue}%` } },
+            { spv: { [Op.like]: `%${searchValue}%` } },
             { divisi: { [Op.like]: `%${searchValue}%` } },
             { nama_depo: { [Op.like]: `%${searchValue}%` } },
             { status: { [Op.like]: `%${searchValue}%` } }
