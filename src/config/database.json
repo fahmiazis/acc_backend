@@ -1,7 +1,7 @@
 {
   "development": {
-    "username": "root",
-    "password": null,
+    "username": "webadmin",
+    "password": "w3Adminpma21+",
     "database": "accounting_development",
     "host": "127.0.0.1",
     "dialect": "mysql"
