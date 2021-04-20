@@ -2,6 +2,7 @@ const express = require('express')
 const bodyParser = require('body-parser')
 const cors = require('cors')
 const response = require('./helpers/response')
+const request = require('request')
 // const fs = require('fs')
 const cron = require('node-cron')
 
@@ -41,8 +42,17 @@ app.use('/depo', authMiddleware, depoRoute)
 app.use('/pic', authMiddleware, picRoute)
 app.use('/show', showRoute)
 
-cron.schedule('0 17 * * *', () => {
-  console.log('Running a job at 16:00 at jakarta timezone')
+const options = {
+  method: 'GET',
+  url: 'http://localhost:7575/show/reminder'
+}
+
+cron.schedule('0 16 * * *', () => {
+  request(options, function (error, response, body) {
+    if (error) {
+      console.log(error)
+    }
+  })
 }, {
   scheduled: true,
   timezone: 'Asia/Jakarta'

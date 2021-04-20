@@ -2,7 +2,7 @@ const route = require('express').Router()
 const dokumen = require('../controllers/documents')
 
 route.post('/add', dokumen.addDocument)
-route.get('/get/area', dokumen.getDocumentsArea)
+route.get('/area/get', dokumen.getDocumentsArea)
 route.get('/get', dokumen.getDocuments)
 route.patch('/update/:id', dokumen.updateDocument)
 route.delete('/delete/:id', dokumen.deleteDocuments)

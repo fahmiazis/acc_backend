@@ -65,7 +65,7 @@ module.exports = {
       //   const id = req.user.id
       const level = req.user.level
       const kode = req.user.kode
-      const timeUser = moment().utc().format('YYYY-MM-DD')
+      let timeUser = moment().utc().format('YYYY-MM-DD')
       const now = timeValue === '' ? new Date(moment().format('YYYY-MM-DD')) : new Date(moment(timeValue).format('YYYY-MM-DD'))
       const tomo = timeValue === '' ? new Date(moment().add(1, 'days').format('YYYY-MM-DD')) : new Date(moment(timeValue).add(1, 'days').format('YYYY-MM-DD'))
       if (level === 4) {
@@ -94,7 +94,9 @@ module.exports = {
           })
           const pageInfo = pagination('/dokumen/get', req.query, page, limit, results.count)
           if (results) {
-            // const block = await activity.findOne()
+            if (tipeValue === 'monthly') {
+              timeUser = moment().utc().format('YYYY-MM')
+            }
             const cek = await sequelize.query(`SELECT kode_plant, tipe from activities WHERE (kode_plant='${kode}' AND tipe='sa') AND jenis_dokumen LIKE '%${tipeValue}%'  AND createdAt LIKE '%${timeUser}%' LIMIT 1`, {
               type: QueryTypes.SELECT
             })
@@ -146,6 +148,9 @@ module.exports = {
           })
           const pageInfo = pagination('/dokumen/get', req.query, page, limit, results.count)
           if (results) {
+            if (tipeValue === 'monthly') {
+              timeUser = moment().utc().format('YYYY-MM')
+            }
             const cek = await sequelize.query(`SELECT kode_plant, tipe from activities WHERE (kode_plant='${kode}' AND tipe='kasir') AND jenis_dokumen LIKE '%${tipeValue}%' AND createdAt LIKE '%${timeUser}%' LIMIT 1`, {
               type: QueryTypes.SELECT
             })
@@ -987,23 +992,6 @@ module.exports = {
         }
       } else {
         return response(res, "You're not super administrator", {}, 404, false)
-      }
-    } catch (error) {
-      return response(res, error.message, {}, 500, false)
-    }
-  },
-  reminder: async (req, res) => {
-    try {
-      const result = await depo.findAndCountAll({
-        include: [{
-          model: email,
-          as: 'emails'
-        }]
-      })
-      if (result) {
-        console.log('success')
-      } else {
-        console.log('failed')
       }
     } catch (error) {
       return response(res, error.message, {}, 500, false)

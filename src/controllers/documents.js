@@ -22,11 +22,10 @@ module.exports = {
         divisi: joi.string().required(),
         status_depo: joi.string().required(),
         uploadedBy: joi.string().valid('sa', 'kasir').required(),
-        status: joi.string().required(),
         kode_depo: joi.number(),
         lock_dokumen: joi.number(),
         alasan: joi.string(),
-        status_dokumen: joi.number()
+        status: joi.string().valid('active', 'inactive')
       })
       const { value: results, error } = schema.validate(req.body)
       if (error) {
@@ -71,13 +70,13 @@ module.exports = {
         createdAt: joi.string(),
         postDokumen: joi.date(),
         status_depo: joi.string().valid('Cabang SAP', 'Cabang Scylla', 'Depo SAP', 'Depo Scylla'),
-        status_dokumen: joi.number()
+        status: joi.string().valid('active', 'inactive')
       })
       const { value: results, error } = schema.validate(req.body)
       if (error) {
         return response(res, 'Error', { error: error.message }, 401, false)
       } else {
-        if (level === 1) {
+        if (level === 1 || level === 2) {
           if (results.nama_dokumen) {
             const result = await documents.findAll({
               where:
@@ -158,7 +157,7 @@ module.exports = {
         typeSortValue = typeSort || 'ASC'
       }
       if (!limit) {
-        limit = 5
+        limit = 10
       } else {
         limit = parseInt(limit)
       }
@@ -167,58 +166,33 @@ module.exports = {
       } else {
         page = parseInt(page)
       }
-      const { level, kode } = req.user
-      const schema = joi.object({
-        fromDate: joi.date(),
-        toDate: joi.date(),
-        jenis: joi.string()
-      })
-      const { value: results, error } = schema.validate(req.body)
-      if (results.pic === undefined) {
-        results.pic = ''
-      }
-      if (results.fromDate === undefined) {
-        results.fromDate = '23/03/2021'
-      }
-      if (results.toDate === undefined) {
-        results.toDate = '23/03/2021'
-      }
-      if (error) {
-        return response(res, 'Error', { error: error.message }, 401, false)
-      } else {
-        const result = await depo.findAndCountAll({
+      const { name } = req.user
+      const result = await depo.findAndCountAll({
+        where: {
+          nama_pic_1: { [Op.like]: `%${name}%` }
+        },
+        include: [{
+          model: documents,
+          as: 'dokumen',
           where: {
-            kode_depo: kode
-          },
-          include: [{
-            model: documents,
-            as: 'dokumen',
-            where: {
-              [Op.and]: [
-                { uploadedBy: level === 4 ? 'sa' : 'kasir' },
-                {
-                  [Op.or]: [
-                    { kode_dokumen: { [Op.like]: `%${searchValue}%` } },
-                    { nama_dokumen: { [Op.like]: `%${searchValue}%` } },
-                    { jenis_dokumen: { [Op.like]: `%${searchValue}%` } },
-                    { divisi: { [Op.like]: `%${searchValue}%` } },
-                    { status_depo: { [Op.like]: `%${searchValue}%` } },
-                    { status: { [Op.like]: `%${searchValue}%` } }
-                  ]
-                }
-              ]
-            }
-          }],
-          order: [[sortValue, typeSortValue]],
-          limit: limit,
-          offset: (page - 1) * limit
-        })
-        const pageInfo = pagination('/dokumen/area/get', req.query, page, limit, result.count)
-        if (result) {
-          return response(res, 'list dokumen', { result, pageInfo })
-        } else {
-          return response(res, 'failed to get user', {}, 404, false)
-        }
+            [Op.or]: [
+              { nama_dokumen: { [Op.like]: `%${searchValue}%` } },
+              { jenis_dokumen: { [Op.like]: `%${searchValue}%` } },
+              { divisi: { [Op.like]: `%${searchValue}%` } },
+              { status_depo: { [Op.like]: `%${searchValue}%` } },
+              { status: { [Op.like]: `%${searchValue}%` } }
+            ]
+          }
+        }],
+        order: [[sortValue, typeSortValue]],
+        limit: limit,
+        offset: (page - 1) * limit
+      })
+      const pageInfo = pagination('/dokumen/area/get', req.query, page, limit, result.count)
+      if (result) {
+        return response(res, 'list dokumen', { result, pageInfo })
+      } else {
+        return response(res, 'failed to get user', {}, 404, false)
       }
     } catch (error) {
       return response(res, error.message, {}, 500, false)
