@@ -19,7 +19,7 @@ module.exports = {
       const schema = joi.object({
         username: joi.string().required(),
         password: joi.string().required(),
-        kode_depo: joi.number().allow(''),
+        kode_depo: joi.string().allow(''),
         nama_depo: joi.string().allow(''),
         user_level: joi.number().required(),
         status: joi.string().required()
@@ -68,7 +68,7 @@ module.exports = {
       const schema = joi.object({
         username: joi.string(),
         password: joi.string().allow(''),
-        kode_depo: joi.number().allow(''),
+        kode_depo: joi.string().allow(''),
         nama_depo: joi.string().allow(''),
         user_level: joi.number(),
         status: joi.string()

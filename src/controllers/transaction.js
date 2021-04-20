@@ -15,16 +15,22 @@ const xlsx = require('xlsx')
 module.exports = {
   dashboard: async (req, res) => {
     try {
-      let { limit, page, search, sort, typeSort, time, tipe } = req.query
+      let { limit, page, search, sort, typeSort, time, tipe, find } = req.query
       let searchValue = ''
       let sortValue = ''
       let typeSortValue = ''
       let timeValue = ''
       let tipeValue = ''
+      let findValue = ''
       if (typeof search === 'object') {
         searchValue = Object.values(search)[0]
       } else {
         searchValue = search || ''
+      }
+      if (typeof find === 'object') {
+        findValue = Object.values(find)[0]
+      } else {
+        findValue = find || ''
       }
       if (typeof sort === 'object') {
         sortValue = Object.values(sort)[0]
@@ -60,8 +66,8 @@ module.exports = {
       const level = req.user.level
       const kode = req.user.kode
       const timeUser = moment().utc().format('YYYY-MM-DD')
-      const now = timeValue === '' ? new Date(moment().utc().format('YYYY-MM-DD')) : new Date(moment(timeValue).utc().format('YYYY-MM-DD'))
-      const tomo = timeValue === '' ? new Date(moment().utc().format('YYYY-MM-DD 24:00:00')) : new Date(moment(timeValue).utc().format('YYYY-MM-DD 24:00:00'))
+      const now = timeValue === '' ? new Date(moment().format('YYYY-MM-DD')) : new Date(moment(timeValue).format('YYYY-MM-DD'))
+      const tomo = timeValue === '' ? new Date(moment().add(1, 'days').format('YYYY-MM-DD')) : new Date(moment(timeValue).add(1, 'days').format('YYYY-MM-DD'))
       if (level === 4) {
         const result = await depo.findOne({
           where: {
@@ -88,6 +94,7 @@ module.exports = {
           })
           const pageInfo = pagination('/dokumen/get', req.query, page, limit, results.count)
           if (results) {
+            // const block = await activity.findOne()
             const cek = await sequelize.query(`SELECT kode_plant, tipe from activities WHERE (kode_plant='${kode}' AND tipe='sa') AND jenis_dokumen LIKE '%${tipeValue}%'  AND createdAt LIKE '%${timeUser}%' LIMIT 1`, {
               type: QueryTypes.SELECT
             })
@@ -177,7 +184,14 @@ module.exports = {
           include: [
             {
               model: depo,
-              as: 'depo'
+              as: 'depo',
+              where: {
+                [Op.or]: [
+                  { kode_plant: { [Op.like]: `%${findValue}%` } },
+                  { nama_depo: { [Op.like]: `%${findValue}%` } },
+                  { home_town: { [Op.like]: `%${findValue}%` } }
+                ]
+              }
             }
           ]
         })
@@ -312,7 +326,14 @@ module.exports = {
           include: [
             {
               model: depo,
-              as: 'depo'
+              as: 'depo',
+              where: {
+                [Op.or]: [
+                  { kode_plant: { [Op.like]: `%${findValue}%` } },
+                  { nama_depo: { [Op.like]: `%${findValue}%` } },
+                  { home_town: { [Op.like]: `%${findValue}%` } }
+                ]
+              }
             }
           ]
         })
@@ -446,7 +467,14 @@ module.exports = {
           include: [
             {
               model: depo,
-              as: 'depo'
+              as: 'depo',
+              where: {
+                [Op.or]: [
+                  { kode_plant: { [Op.like]: `%${findValue}%` } },
+                  { nama_depo: { [Op.like]: `%${findValue}%` } },
+                  { home_town: { [Op.like]: `%${findValue}%` } }
+                ]
+              }
             }
           ]
         })
@@ -652,14 +680,7 @@ module.exports = {
         } else if (err) {
           return response(res, err.message, {}, 401, false)
         }
-        let dokumen = ''
-        for (let x = 0; x < req.files.length; x++) {
-          const path = `assets/documents/${req.files[x].filename}`
-          dokumen += path + ', '
-          if (x === req.files.length - 1) {
-            dokumen = dokumen.slice(0, dokumen.length - 2)
-          }
-        }
+        const dokumen = `assets/documents/${req.file.filename}`
         if (level === 4 || level === 5) {
           const valid = await Path.findByPk(id)
           if (valid) {
@@ -1021,7 +1042,7 @@ module.exports = {
     if (error) {
       return response(res, 'Error', { error: error.message }, 404, false)
     } else {
-      const first = ['No', 'Nama Depo', 'Kode Plant', 'Profit Center', 'Kode SAP 1', 'Tanggal Dokumen', 'Tanggal Upload']
+      const first = ['No', 'Nama Depo', 'Kode Plant', 'Profit Center', 'Kode SAP 1', 'Status Depo', 'Tanggal Dokumen', 'Tanggal Upload']
       const last = ['Jumlah File Upload', 'Persentase', 'Status', 'Uploaded By']
       if (level === 1 || level === 2 || level === 3) {
         if (results.pic !== '') {
@@ -1155,6 +1176,7 @@ module.exports = {
                     temp.push(sa[i].kode_plant)
                     temp.push(sa[i].profit_center)
                     temp.push(sa[i].kode_sap_1)
+                    temp.push(sa[i].status_depo)
                     temp.push(moment(sa[i].active[j].documentDate).format('DD MMMM YYYY'))
                     temp.push(moment(sa[i].active[j].createdAt).format('DD MMMM YYYY'))
                     for (let d = 0; d < resu.length; d++) {
@@ -1191,6 +1213,7 @@ module.exports = {
                     temp.push(kasir[i].kode_plant)
                     temp.push(kasir[i].profit_center)
                     temp.push(kasir[i].kode_sap_1)
+                    temp.push(kasir[i].status_depo)
                     temp.push(moment(kasir[i].active[j].documentDate).format('DD MMMM YYYY'))
                     temp.push(moment(kasir[i].active[j].createdAt).format('DD MMMM YYYY'))
                     for (let d = 0; d < resu.length; d++) {
@@ -1352,6 +1375,7 @@ module.exports = {
                 temp.push(sa[i].kode_plant)
                 temp.push(sa[i].profit_center)
                 temp.push(sa[i].kode_sap_1)
+                temp.push(sa[i].status_depo)
                 temp.push(moment(sa[i].active[j].documentDate).format('DD MMMM YYYY'))
                 temp.push(moment(sa[i].active[j].createdAt).format('DD MMMM YYYY'))
                 for (let d = 0; d < resu.length; d++) {
@@ -1388,6 +1412,7 @@ module.exports = {
                 temp.push(kasir[i].kode_plant)
                 temp.push(kasir[i].profit_center)
                 temp.push(kasir[i].kode_sap_1)
+                temp.push(kasir[i].status_depo)
                 temp.push(moment(kasir[i].active[j].documentDate).format('DD MMMM YYYY'))
                 temp.push(moment(kasir[i].active[j].createdAt).format('DD MMMM YYYY'))
                 for (let d = 0; d < resu.length; d++) {
@@ -1500,6 +1525,7 @@ module.exports = {
               temp.push(sa[i].kode_plant)
               temp.push(sa[i].profit_center)
               temp.push(sa[i].kode_sap_1)
+              temp.push(sa[i].status_depo)
               temp.push(moment(sa[i].active[j].documentDate).format('DD MMMM YYYY'))
               temp.push(moment(sa[i].active[j].createdAt).format('DD MMMM YYYY'))
               for (let d = 0; d < resu.length; d++) {
@@ -1611,6 +1637,7 @@ module.exports = {
               temp.push(kasir[i].kode_plant)
               temp.push(kasir[i].profit_center)
               temp.push(kasir[i].kode_sap_1)
+              temp.push(kasir[i].status_depo)
               temp.push(moment(kasir[i].active[j].documentDate).format('DD MMMM YYYY'))
               temp.push(moment(kasir[i].active[j].createdAt).format('DD MMMM YYYY'))
               for (let d = 0; d < resu.length; d++) {
