@@ -1,5 +1,5 @@
 const { pagination } = require('../helpers/pagination')
-const { documents, sequelize, Path, depo, activity, pic, email } = require('../models')
+const { documents, sequelize, Path, depo, activity, pic, email, notif } = require('../models')
 const { Op, QueryTypes } = require('sequelize')
 const response = require('../helpers/response')
 const joi = require('joi')
@@ -11,6 +11,7 @@ const { APP_URL } = process.env
 const mailer = require('../helpers/mailer')
 const moment = require('moment')
 const xlsx = require('xlsx')
+const io = require('../App')
 
 module.exports = {
   dashboard: async (req, res) => {
@@ -637,11 +638,27 @@ module.exports = {
               const cek = await sequelize.query(`SELECT id from activities WHERE (kode_plant='${kode}' AND tipe='kasir') AND createdAt LIKE '%${time}%' AND jenis_dokumen='${result.jenis_dokumen}' LIMIT 1`, {
                 type: QueryTypes.SELECT
               })
-              console.log(cek)
               if (cek.length > 0) {
                 const send = { dokumen: result.nama_dokumen, activityId: cek[0].id, path: dokumen, kode_depo: kode, status_dokumen: 1 }
                 const upload = await Path.create(send)
-                return response(res, 'successfully upload dokumen', { upload })
+                if (upload) {
+                  const data = {
+                    kode_plant: kode,
+                    reject: 'false',
+                    upload: 'true',
+                    activityId: cek[0].id,
+                    pathId: upload.id,
+                    tipe: 'kasir'
+                  }
+                  const result = await notif.create(data)
+                  if (result) {
+                    return response(res, 'successfully upload dokumen', { upload })
+                  } else {
+                    return response(res, 'failed to upload dokumen', {}, 404, false)
+                  }
+                } else {
+                  return response(res, 'failed to upload dokumen', {}, 404, false)
+                }
               } else {
                 return response(res, 'failed to upload dokumen', {}, 404, false)
               }
@@ -657,7 +674,24 @@ module.exports = {
               if (cek.length > 0) {
                 const send = { dokumen: result.nama_dokumen, activityId: cek[0].id, path: dokumen, kode_depo: kode, status_dokumen: 1 }
                 const upload = await Path.create(send)
-                return response(res, 'successfully upload dokumen', { upload })
+                if (upload) {
+                  const data = {
+                    kode_plant: kode,
+                    reject: 'false',
+                    upload: 'true',
+                    activityId: cek[0].id,
+                    pathId: upload.id,
+                    tipe: 'sa'
+                  }
+                  const result = await notif.create(data)
+                  if (result) {
+                    return response(res, 'successfully upload dokumen', { upload })
+                  } else {
+                    return response(res, 'failed to upload dokumen', {}, 404, false)
+                  }
+                } else {
+                  return response(res, 'failed to upload dokumen', {}, 404, false)
+                }
               } else {
                 return response(res, 'failed to upload dokumen', {}, 404, false)
               }
@@ -728,7 +762,7 @@ module.exports = {
         typeSortValue = typeSort || 'DESC'
       }
       if (!limit) {
-        limit = 5
+        limit = 30
       } else {
         limit = parseInt(limit)
       }
@@ -823,14 +857,40 @@ module.exports = {
         const approve = { status_dokumen: 3 }
         if (result) {
           if (result.status_dokumen === 3) {
-            return response(res, 'succes approve dokumen')
+            const find = await notif.findOne({
+              where: {
+                [Op.and]: [
+                  { pathId: id },
+                  { reject: 'true' }
+                ]
+              }
+            })
+            if (find) {
+              await find.destroy()
+              return response(res, 'succes approve dokumen')
+            } else {
+              return response(res, 'succes approve dokumen')
+            }
           } else {
             await result.update(approve)
             const act = await activity.findByPk(idAct)
             if (act) {
               const send = { progress: act.progress + 1 }
               await act.update(send)
-              return response(res, 'succes approve dokumen')
+              const find = await notif.findOne({
+                where: {
+                  [Op.and]: [
+                    { pathId: id },
+                    { reject: 'true' }
+                  ]
+                }
+              })
+              if (find) {
+                await find.destroy()
+                return response(res, 'succes approve dokumen')
+              } else {
+                return response(res, 'succes approve dokumen')
+              }
             } else {
               return response(res, 'failed approve dokumen', {}, 404, false)
             }
@@ -869,14 +929,51 @@ module.exports = {
               const act = await activity.findByPk(idAct)
               if (act) {
                 const desc = { progress: act.progress - 1 }
-                await act.update(desc)
-                return response(res, 'success reject dokumen')
+                const update = await act.update(desc)
+                if (update) {
+                  const data = {
+                    kode_plant: act.kode_plant,
+                    reject: 'true',
+                    upload: 'false',
+                    activityId: idAct,
+                    pathId: id,
+                    tipe: act.tipe
+                  }
+                  const result = await notif.create(data)
+                  io.emit(act.kode_plant, { idAct, reject: true })
+                  if (result) {
+                    return response(res, 'success reject dokumen')
+                  } else {
+                    return response(res, 'failed reject dokumen', {}, 404, false)
+                  }
+                } else {
+                  return response(res, 'failed reject dokumen', {}, 404, false)
+                }
               } else {
                 return response(res, 'failed reject dokumen', {}, 404, false)
               }
             } else {
-              await result.update(send)
-              return response(res, 'success reject dokumen')
+              const update = await result.update(send)
+              const act = await activity.findByPk(idAct)
+              if (update) {
+                const data = {
+                  kode_plant: act.kode_plant,
+                  reject: 'true',
+                  upload: 'false',
+                  activityId: idAct,
+                  pathId: id,
+                  tipe: act.tipe
+                }
+                const result = await notif.create(data)
+                io.emit(act.kode_plant, { idAct, data: data })
+                if (result) {
+                  return response(res, 'success reject dokumen')
+                } else {
+                  return response(res, 'failed reject dokumen', {}, 404, false)
+                }
+              } else {
+                return response(res, 'failed reject dokumen', {}, 404, false)
+              }
             }
           } else {
             return response(res, 'failed reject dokumen', {}, 404, false)
@@ -1188,6 +1285,7 @@ module.exports = {
                     } else {
                       temp.push(((sa[i].active[j].progress / sa[i].dokumen.length) * 100) === 100 ? 'Done' : ((sa[i].active[j].progress / sa[i].dokumen.length) * 100) < 100 ? 'Kurang Upload' : '')
                     }
+                    temp.push(tipeValue)
                     temp.push(sa[i].active[j].tipe)
                     saBody.push(temp)
                   }
@@ -1225,6 +1323,7 @@ module.exports = {
                     } else {
                       temp.push(((kasir[i].active[j].progress / kasir[i].dokumen.length) * 100) === 100 ? 'Done' : ((kasir[i].active[j].progress / kasir[i].dokumen.length) * 100) < 100 ? 'Kurang Upload' : '')
                     }
+                    temp.push(tipeValue)
                     temp.push(kasir[i].active[j].tipe)
                     kasirBody.push(temp)
                   }
@@ -1387,6 +1486,7 @@ module.exports = {
                 } else {
                   temp.push(((sa[i].active[j].progress / sa[i].dokumen.length) * 100) === 100 ? 'Done' : ((sa[i].active[j].progress / sa[i].dokumen.length) * 100) < 100 ? 'Kurang Upload' : '')
                 }
+                temp.push(tipeValue)
                 temp.push(sa[i].active[j].tipe)
                 saBody.push(temp)
               }
@@ -1424,6 +1524,7 @@ module.exports = {
                 } else {
                   temp.push(((kasir[i].active[j].progress / kasir[i].dokumen.length) * 100) === 100 ? 'Done' : ((kasir[i].active[j].progress / kasir[i].dokumen.length) * 100) < 100 ? 'Kurang Upload' : '')
                 }
+                temp.push(tipeValue)
                 temp.push(kasir[i].active[j].tipe)
                 kasirBody.push(temp)
               }
@@ -1537,6 +1638,7 @@ module.exports = {
               } else {
                 temp.push(((sa[i].active[j].progress / sa[i].dokumen.length) * 100) === 100 ? 'Done' : ((sa[i].active[j].progress / sa[i].dokumen.length) * 100) < 100 ? 'Kurang Upload' : '')
               }
+              temp.push(tipeValue)
               temp.push(sa[i].active[j].tipe)
               saBody.push(temp)
             }
@@ -1649,6 +1751,7 @@ module.exports = {
               } else {
                 temp.push(((kasir[i].active[j].progress / kasir[i].dokumen.length) * 100) === 100 ? 'Done' : ((kasir[i].active[j].progress / kasir[i].dokumen.length) * 100) < 100 ? 'Kurang Upload' : '')
               }
+              temp.push(tipeValue)
               temp.push(kasir[i].active[j].tipe)
               kasirBody.push(temp)
             }
@@ -1683,5 +1786,418 @@ module.exports = {
     // } catch (error) {
     //   return response(res, error.message, {}, 500, false)
     // }
+  },
+  getNotif: async (req, res) => {
+    try {
+      const kode = req.user.kode
+      const level = req.user.level
+      const name = req.user.name
+      console.log(kode)
+      console.log()
+      if (level === 4) {
+        const result = await notif.findAll({
+          where: {
+            [Op.and]: [
+              { kode_plant: kode },
+              { tipe: 'sa' }
+            ],
+            reject: 'true'
+          },
+          order: [['id', 'DESC']],
+          include: [
+            {
+              model: Path,
+              as: 'dokumen'
+            },
+            {
+              model: activity,
+              as: 'active'
+            }
+          ]
+        })
+        if (result) {
+          return response(res, 'success get notif', { result })
+        } else {
+          return response(res, 'failed get notif', {}, 404, false)
+        }
+      } else if (level === 5) {
+        const result = await notif.findAll({
+          where: {
+            [Op.and]: [
+              { kode_plant: kode },
+              { tipe: 'kasir' }
+            ],
+            reject: 'true'
+          },
+          order: [['id', 'DESC']],
+          include: [
+            {
+              model: Path,
+              as: 'dokumen'
+            },
+            {
+              model: activity,
+              as: 'active'
+            }
+          ]
+        })
+        if (result) {
+          return response(res, 'success get notif', { result })
+        } else {
+          return response(res, 'failed get notif', {}, 404, false)
+        }
+      } else if (level === 2) {
+        const find = await pic.findAndCountAll({
+          where: {
+            spv: name
+          },
+          include: [
+            {
+              model: depo,
+              as: 'depo'
+            }
+          ]
+        })
+        if (find) {
+          const depos = []
+          find.rows.map(x => {
+            return (
+              depos.push(x)
+            )
+          })
+          if (depos.length > 0) {
+            const sa = []
+            const kasir = []
+            for (let i = 0; i < depos.length; i++) {
+              const result = await notif.findAndCountAll({
+                where: {
+                  [Op.and]: [
+                    { kode_plant: depos[i].kode_depo },
+                    { upload: 'true' }
+                  ]
+                },
+                order: [['id', 'DESC']],
+                include: [
+                  {
+                    model: Path,
+                    as: 'dokumen'
+                  },
+                  {
+                    model: activity,
+                    as: 'active'
+                  }
+                ]
+              })
+              if (result.rows[0]) {
+                result.rows.map(item => {
+                  return sa.push(item)
+                })
+              }
+            }
+            if (sa.length > 0) {
+              return response(res, 'list dokumen', { sa, kasir })
+            } else {
+              return response(res, 'list dokumen', { sa, kasir })
+            }
+          } else {
+            return response(res, 'depo no found', {}, 404, false)
+          }
+        } else {
+          return response(res, 'failed to get notif', {}, 404, false)
+        }
+      } else if (level === 3) {
+        const find = await pic.findAndCountAll({
+          where: {
+            pic: name
+          },
+          include: [
+            {
+              model: depo,
+              as: 'depo'
+            }
+          ]
+        })
+        if (find) {
+          const depos = []
+          find.rows.map(x => {
+            return (
+              depos.push(x)
+            )
+          })
+          if (depos.length > 0) {
+            const sa = []
+            const kasir = []
+            for (let i = 0; i < depos.length; i++) {
+              const result = await notif.findAndCountAll({
+                where: {
+                  [Op.and]: [
+                    { kode_plant: depos[i].kode_depo },
+                    { upload: 'true' }
+                  ]
+                },
+                order: [['id', 'DESC']],
+                include: [
+                  {
+                    model: Path,
+                    as: 'dokumen'
+                  },
+                  {
+                    model: activity,
+                    as: 'active'
+                  }
+                ]
+              })
+              if (result.rows[0]) {
+                result.rows.map(item => {
+                  return sa.push(item)
+                })
+              }
+            }
+            if (sa.length > 0 || kasir.length > 0) {
+              return response(res, 'list dokumen', { sa, kasir })
+            } else {
+              return response(res, 'list dokumen', { sa, kasir })
+            }
+          } else {
+            return response(res, 'depo no found', {}, 404, false)
+          }
+        } else {
+          return response(res, 'failed to get notif', {}, 404, false)
+        }
+      }
+    } catch (error) {
+      return response(res, error.message, {}, 500, false)
+    }
+  },
+  // updateNotif: async (req, res) => {
+  //   try {
+  //     const id = req.params.id
+  //     const level = req.user.level
+  //     if (level === 2) {
+  //       const result = await notif.findByPk(id)
+
+  //     } else {
+  //     }
+  //   } catch (error) {
+  //     return response(res, error.message, {}, 500, false)
+  //   }
+  // },
+  getAllActivity: async (req, res) => {
+    try {
+      const level = req.user.level
+      const name = req.user.name
+      let { limit, page, search, time, tipe, find } = req.query
+      let searchValue = ''
+      let timeValue = ''
+      let tipeValue = ''
+      let findValue = ''
+      if (typeof search === 'object') {
+        searchValue = Object.values(search)[0]
+      } else {
+        searchValue = search || ''
+      }
+      if (typeof find === 'object') {
+        findValue = Object.values(find)[0]
+      } else {
+        findValue = find || ''
+      }
+      if (typeof time === 'object') {
+        timeValue = Object.values(time)[0]
+      } else {
+        timeValue = time || ''
+      }
+      if (typeof tipe === 'object') {
+        tipeValue = Object.values(tipe)[0]
+      } else {
+        tipeValue = tipe || 'daily'
+      }
+      if (!limit) {
+        limit = 10
+      } else {
+        limit = parseInt(limit)
+      }
+      if (!page) {
+        page = 1
+      } else {
+        page = parseInt(page)
+      }
+      // const startOfMonth = moment().clone().startOf('month').format('YYYY-MM-DD hh:mm');
+      // const endOfMonth   = moment().clone().endOf('month').format('YYYY-MM-DD hh:mm');
+      const now = new Date(moment().clone().startOf('month').format('YYYY-MM-DD'))
+      const tomo = new Date(moment().clone().endOf('month').format('YYYY-MM-DD'))
+      if (level === 2) {
+        const results = await pic.findAndCountAll({
+          where: {
+            spv: name
+          },
+          limit: limit,
+          offset: (page - 1) * limit,
+          include: [
+            {
+              model: depo,
+              as: 'depo',
+              where: {
+                [Op.or]: [
+                  { kode_plant: { [Op.like]: `%${findValue}%` } },
+                  { nama_depo: { [Op.like]: `%${findValue}%` } },
+                  { home_town: { [Op.like]: `%${findValue}%` } }
+                ]
+              }
+            }
+          ]
+        })
+        const pageInfo = pagination('/dashboard/active', req.query, page, limit, results.count)
+        if (results) {
+          const depos = []
+          results.rows.map(x => {
+            return (
+              depos.push(x)
+            )
+          })
+          if (depos.length > 0) {
+            const sa = []
+            const kasir = []
+            for (let i = 0; i < depos.length; i++) {
+              const result = await depo.findAndCountAll({
+                where: {
+                  kode_plant: depos[i].kode_depo
+                },
+                include: [
+                  {
+                    model: activity,
+                    as: 'active',
+                    where: {
+                      [Op.and]: [
+                        { kode_plant: depos[i].kode_depo },
+                        { tipe: 'sa' },
+                        { jenis_dokumen: { [Op.like]: `%${tipeValue}%` } }
+                      ],
+                      createdAt: {
+                        [Op.lt]: tomo,
+                        [Op.gt]: now
+                      }
+                    },
+                    limit: 31,
+                    include: [
+                      {
+                        model: Path,
+                        as: 'doc',
+                        limit: 50
+                      }
+                    ]
+                  },
+                  {
+                    model: documents,
+                    as: 'dokumen',
+                    where: {
+                      [Op.or]: [
+                        { nama_dokumen: { [Op.like]: `%${searchValue}%` } }
+                      ],
+                      [Op.and]: [
+                        { jenis_dokumen: { [Op.like]: `%${tipeValue}%` } },
+                        { uploadedBy: 'sa' }
+                      ],
+                      [Op.not]: { status: 'inactive' }
+                    }
+                  }
+                ]
+              })
+              if (result) {
+                sa.push(result.rows[0])
+              }
+            }
+            for (let i = 0; i < depos.length; i++) {
+              const result = await depo.findAndCountAll({
+                where: {
+                  kode_plant: depos[i].kode_depo
+                },
+                include: [
+                  {
+                    model: activity,
+                    as: 'active',
+                    where: {
+                      [Op.and]: [
+                        { kode_plant: depos[i].kode_depo },
+                        { tipe: 'kasir' },
+                        { jenis_dokumen: { [Op.like]: `%${tipeValue}%` } }
+                      ],
+                      createdAt: {
+                        [Op.lt]: tomo,
+                        [Op.gt]: now
+                      }
+                    },
+                    limit: 31,
+                    include: [
+                      {
+                        model: Path,
+                        as: 'doc',
+                        limit: 50
+                      }
+                    ]
+                  },
+                  {
+                    model: documents,
+                    as: 'dokumen',
+                    where: {
+                      [Op.or]: [
+                        { nama_dokumen: { [Op.like]: `%${searchValue}%` } }
+                      ],
+                      [Op.and]: [
+                        { jenis_dokumen: { [Op.like]: `%${tipeValue}%` } },
+                        { uploadedBy: 'kasir' }
+                      ],
+                      [Op.not]: { status: 'inactive' }
+                    }
+                  }
+                ]
+              })
+              if (result) {
+                kasir.push(result.rows[0])
+              }
+            }
+            if (sa.length > 0 || kasir.length > 0) {
+              return response(res, 'list dokumen', { results, sa, kasir, pageInfo })
+            } else {
+              return response(res, 'list dokumen', { results, sa, kasir, pageInfo })
+            }
+          } else {
+            return response(res, 'depo no found', {}, 404, false)
+          }
+        } else {
+          return response(res, 'failed to get dokumen', {}, 404, false)
+        }
+      } else {
+        return response(res, "you're not user spv", {}, 404, false)
+      }
+    } catch (error) {
+      return response(res, error.message, {}, 500, false)
+    }
+  },
+  editAccessActive: async (req, res) => {
+    try {
+      const id = req.params.id
+      const level = req.user.level
+      const schema = joi.object({
+        access: joi.string().valid('lock', 'unlock')
+      })
+      const { value: results, error } = schema.validate(req.body)
+      if (error) {
+        return response(res, 'Error', { error: error.message }, 404, false)
+      } else {
+        if (level === 2) {
+          const result = await activity.findByPk(id)
+          if (result) {
+            await result.update(results)
+            return response(res, 'success update activity')
+          } else {
+            return response(res, 'failed update activity', {}, 404, false)
+          }
+        } else {
+          return response(res, "you're not user spv", {}, 404, false)
+        }
+      }
+    } catch (error) {
+      return response(res, error.message, {}, 500, false)
+    }
   }
 }

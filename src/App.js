@@ -4,17 +4,27 @@ const cors = require('cors')
 const response = require('./helpers/response')
 const request = require('request')
 // const fs = require('fs')
+const morgan = require('morgan')
 const cron = require('node-cron')
+// const moment = require('moment')
 
 const app = express()
 const server = require('http').createServer(app)
+const io = require('socket.io')(server, {
+  cors: {
+    origin: 'http://localhost:7575',
+    methods: ['GET', 'POST'],
+    allowedHeaders: ['Authorization'],
+    credentials: true
+  }
+})
+module.exports = io
 
 const { APP_PORT, APP_URL } = process.env
 
 app.use(bodyParser.urlencoded({ extended: false }))
+app.use(morgan('dev'))
 app.use(cors())
-
-const authMiddleware = require('./middleware/auth')
 
 const userRoute = require('./routes/user')
 const authRoute = require('./routes/auth')
@@ -26,6 +36,8 @@ const depoRoute = require('./routes/depo')
 const picRoute = require('./routes/pic')
 const transRoute = require('./routes/transaction')
 const showRoute = require('./routes/show')
+
+const authMiddleware = require('./middleware/auth')
 
 app.use('/uploads', express.static('assets/documents'))
 app.use('/masters', express.static('assets/masters'))
@@ -44,10 +56,10 @@ app.use('/show', showRoute)
 
 const options = {
   method: 'GET',
-  url: 'http://localhost:7575/show/reminder'
+  url: 'http://35.219.64.61:7575/show/reminder'
 }
 
-cron.schedule('0 16 * * *', () => {
+cron.schedule('0 12,15 * * 1-5', () => {
   request(options, function (error, response, body) {
     if (error) {
       console.log(error)
@@ -58,20 +70,22 @@ cron.schedule('0 16 * * *', () => {
   timezone: 'Asia/Jakarta'
 })
 
-// app.get('/show', function (req, res) {
-//   const filePath = 'assets/documents/1_1617886935906.pdf'
-
-//   fs.readFile(filePath, function (err, data) {
-//     if (err) {
-//       console.log(err)
-//     }
-//     res.contentType('application/pdf')
-//     res.send(data)
-//   })
+// cron.schedule('0 12,15 * * 1-5', () => {
+//   console.log('mantap' + moment().format('LLL'))
+// }, {
+//   scheduled: true,
+//   timezone: 'Asia/Jakarta'
 // })
 
 app.get('*', (req, res) => {
   response(res, 'Error route not found', {}, 404, false)
+})
+
+app.get('/', (req, res) => {
+  res.send({
+    success: true,
+    message: 'Backend is running'
+  })
 })
 
 server.listen(APP_PORT, () => {

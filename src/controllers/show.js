@@ -38,7 +38,7 @@ module.exports = {
           from: 'no-replyaccounting@pinusmerahabadi.co.id',
           replyTo: 'no-replyaccounting@pinusmerahabadi.co.id',
           to: `${email.map(item => { return (item + ',') })}`,
-          subject: 'Reminder',
+          subject: 'Reminder Web Accounting',
           html: `<body>
                     <div style="margin-top: 20px; margin-bottom: 35px;">Dear Bapak/Ibu Area</div>
                     <div style="margin-bottom: 5px;">Untuk Dokumen yang direject atau yang belum lengkap dimohon untuk segera diupload.</div>

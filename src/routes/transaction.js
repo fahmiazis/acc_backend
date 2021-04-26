@@ -9,5 +9,8 @@ route.patch('/approve/:id/:idAct', trans.approveDocument)
 route.patch('/reject/:id/:idAct', trans.rejectDocument)
 route.post('/send/:id', trans.sendMail)
 route.post('/report', trans.reportDokumen)
+route.get('/active', trans.getAllActivity)
+route.patch('/edit/:id', trans.editAccessActive)
+route.get('/notif', trans.getNotif)
 
 module.exports = route
