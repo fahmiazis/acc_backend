@@ -96,8 +96,8 @@ module.exports = {
           const pageInfo = pagination('/dokumen/get', req.query, page, limit, results.count)
           if (results) {
             if (tipeValue === 'monthly') {
-              timeUser = new Date(moment().clone().startOf('month').format('YYYY-MM-DD'))
-              timeUserTomo = new Date(moment().clone().endOf('month').format('YYYY-MM-DD'))
+              timeUser = new Date(moment().startOf('month').format('YYYY-MM-DD'))
+              timeUserTomo = new Date(moment().add(1, 'month').startOf('month').format('YYYY-MM-DD'))
             }
             const cek = await activity.findAll({
               where: {
@@ -107,56 +107,73 @@ module.exports = {
                   { jenis_dokumen: tipeValue }
                 ],
                 createdAt: {
-                  [Op.lt]: timeUserTomo,
-                  [Op.gt]: timeUser
+                  [Op.gt]: timeUser,
+                  [Op.lt]: timeUserTomo
                 }
               }
             })
             if (cek.length > 0) {
               return response(res, 'list dokumen', { results, pageInfo })
             } else {
-              const now = new Date(moment().clone().startOf('month').format('YYYY-MM-DD'))
-              const tomo = new Date(moment().clone().endOf('month').format('YYYY-MM-DD'))
-              const find = await activity.findAll({
-                where: {
-                  [Op.and]: [
-                    { kode_plant: kode },
-                    { tipe: 'sa' },
-                    { jenis_dokumen: tipeValue }
-                  ],
-                  createdAt: {
-                    [Op.lt]: tomo,
-                    [Op.gt]: now
+              if (tipeValue === 'daily') {
+                const now = new Date(moment().startOf('month').format('YYYY-MM-DD'))
+                const tomo = new Date(moment().add(1, 'month').startOf('month').format('YYYY-MM-DD'))
+                const find = await activity.findAll({
+                  where: {
+                    [Op.and]: [
+                      { kode_plant: kode },
+                      { tipe: 'sa' },
+                      { jenis_dokumen: tipeValue }
+                    ],
+                    createdAt: {
+                      [Op.lt]: tomo,
+                      [Op.gt]: now
+                    }
                   }
-                }
-              })
-              if (find) {
-                const temp = []
-                find.map(item => {
-                  return temp.push(item.id)
                 })
-                for (let i = 0; i < find.length; i++) {
-                  const send = {
-                    access: 'lock'
+                if (find) {
+                  const temp = []
+                  find.map(item => {
+                    return temp.push(item.id)
+                  })
+                  for (let i = 0; i < find.length; i++) {
+                    const send = {
+                      access: 'lock'
+                    }
+                    const change = await activity.findByPk(temp[i])
+                    if (change) {
+                      await change.update(send)
+                    }
                   }
-                  const change = await activity.findByPk(temp[i])
-                  if (change) {
-                    await change.update(send)
+                  const data = {
+                    kode_plant: kode,
+                    status: 'Belum Upload',
+                    documentDate: new Date(moment().subtract(1, 'days')),
+                    access: 'unlock',
+                    jenis_dokumen: tipeValue === 'daily' ? 'daily' : 'monthly',
+                    tipe: 'sa'
                   }
-                }
-                const data = {
-                  kode_plant: kode,
-                  status: 'Belum Upload',
-                  documentDate: new Date(moment().subtract(1, 'days')),
-                  access: 'unlock',
-                  jenis_dokumen: tipeValue === 'daily' ? 'daily' : 'monthly',
-                  tipe: 'sa'
-                }
-                const create = await activity.create(data)
-                if (create) {
-                  return response(res, 'list dokumen', { results, pageInfo })
+                  const create = await activity.create(data)
+                  if (create) {
+                    return response(res, 'list dokumen', { results, pageInfo, cek: cek })
+                  } else {
+                    return response(res, 'failed to get dokumen', {}, 404, false)
+                  }
                 } else {
-                  return response(res, 'failed to get dokumen', {}, 404, false)
+                  const data = {
+                    kode_plant: kode,
+                    status: 'Belum Upload',
+                    documentDate: new Date(moment().subtract(1, 'days')),
+                    access: 'unlock',
+                    jenis_dokumen: tipeValue === 'daily' ? 'daily' : 'monthly',
+                    tipe: 'sa'
+                  }
+                  const create = await activity.create(data)
+                  if (create) {
+                    return response(res, 'list dokumen', { results, pageInfo, cek: cek })
+                  } else {
+                    return response(res, 'failed to get dokumen', {}, 404, false)
+                  }
                 }
               } else {
                 const data = {
@@ -169,7 +186,7 @@ module.exports = {
                 }
                 const create = await activity.create(data)
                 if (create) {
-                  return response(res, 'list dokumen', { results, pageInfo })
+                  return response(res, 'list dokumen', { results, pageInfo, cek: cek })
                 } else {
                   return response(res, 'failed to get dokumen', {}, 404, false)
                 }
@@ -206,8 +223,8 @@ module.exports = {
           const pageInfo = pagination('/dokumen/get', req.query, page, limit, results.count)
           if (results) {
             if (tipeValue === 'monthly') {
-              timeUser = new Date(moment().clone().startOf('month').format('YYYY-MM-DD'))
-              timeUserTomo = new Date(moment().clone().endOf('month').format('YYYY-MM-DD'))
+              timeUser = new Date(moment().startOf('month').format('YYYY-MM-DD'))
+              timeUserTomo = new Date(moment().add(1, 'month').startOf('month').format('YYYY-MM-DD'))
             }
             const cek = await activity.findAll({
               where: {
@@ -225,48 +242,65 @@ module.exports = {
             if (cek.length > 0) {
               return response(res, 'list dokumen', { results, pageInfo })
             } else {
-              const now = new Date(moment().clone().startOf('month').format('YYYY-MM-DD'))
-              const tomo = new Date(moment().clone().endOf('month').format('YYYY-MM-DD'))
-              const find = await activity.findAll({
-                where: {
-                  [Op.and]: [
-                    { kode_plant: kode },
-                    { tipe: 'kasir' },
-                    { jenis_dokumen: tipeValue }
-                  ],
-                  createdAt: {
-                    [Op.lt]: tomo,
-                    [Op.gt]: now
+              if (tipeValue === 'daily') {
+                const now = new Date(moment().clone().startOf('month').format('YYYY-MM-DD'))
+                const tomo = new Date(moment().add(1, 'month').startOf('month').format('YYYY-MM-DD'))
+                const find = await activity.findAll({
+                  where: {
+                    [Op.and]: [
+                      { kode_plant: kode },
+                      { tipe: 'kasir' },
+                      { jenis_dokumen: tipeValue }
+                    ],
+                    createdAt: {
+                      [Op.lt]: tomo,
+                      [Op.gt]: now
+                    }
                   }
-                }
-              })
-              if (find) {
-                const temp = []
-                find.map(item => {
-                  return temp.push(item.id)
                 })
-                for (let i = 0; i < find.length; i++) {
-                  const send = {
-                    access: 'lock'
+                if (find) {
+                  const temp = []
+                  find.map(item => {
+                    return temp.push(item.id)
+                  })
+                  for (let i = 0; i < find.length; i++) {
+                    const send = {
+                      access: 'lock'
+                    }
+                    const change = await activity.findByPk(temp[i])
+                    if (change) {
+                      await change.update(send)
+                    }
                   }
-                  const change = await activity.findByPk(temp[i])
-                  if (change) {
-                    await change.update(send)
+                  const data = {
+                    kode_plant: kode,
+                    status: 'Belum Upload',
+                    documentDate: new Date(moment().subtract(1, 'days')),
+                    access: 'unlock',
+                    jenis_dokumen: tipeValue === 'daily' ? 'daily' : 'monthly',
+                    tipe: 'kasir'
                   }
-                }
-                const data = {
-                  kode_plant: kode,
-                  status: 'Belum Upload',
-                  documentDate: new Date(moment().subtract(1, 'days')),
-                  access: 'unlock',
-                  jenis_dokumen: tipeValue === 'daily' ? 'daily' : 'monthly',
-                  tipe: 'kasir'
-                }
-                const create = await activity.create(data)
-                if (create) {
-                  return response(res, 'list dokumen', { results, pageInfo })
+                  const create = await activity.create(data)
+                  if (create) {
+                    return response(res, 'list dokumen', { results, pageInfo })
+                  } else {
+                    return response(res, 'failed to get dokumen', {}, 404, false)
+                  }
                 } else {
-                  return response(res, 'failed to get dokumen', {}, 404, false)
+                  const data = {
+                    kode_plant: kode,
+                    status: 'Belum Upload',
+                    documentDate: new Date(moment().subtract(1, 'days')),
+                    access: 'unlock',
+                    jenis_dokumen: tipeValue === 'daily' ? 'daily' : 'monthly',
+                    tipe: 'kasir'
+                  }
+                  const create = await activity.create(data)
+                  if (create) {
+                    return response(res, 'list dokumen', { results, pageInfo })
+                  } else {
+                    return response(res, 'failed to get dokumen', {}, 404, false)
+                  }
                 }
               } else {
                 const data = {
@@ -1683,15 +1717,19 @@ module.exports = {
                           for (let j = 0; j < dataSa[i].active[0].doc.length; j++) {
                             if (dataSa[i].active[0].doc[j].dokumen === resultDokumen[d]) {
                               dataSa[i].active[0].doc[j].status_dokumen === 3
-                                ? collect.push(moment(dataSa[i].active[0].doc[j].updatedAt).format('LLL'))
-                                : collect.push('-')
+                                ? collect.push(moment(dataSa[i].active[0].doc[j].createdAt).format('LLL'))
+                                : dataSa[i].active[0].doc[j].status_dokumen === 5
+                                  ? collect.push('Telat  ' + `(${moment(dataSa[i].active[0].doc[j].createdAt).format('LLL')})`)
+                                  : collect.push('-')
                             }
                           }
                           for (let x = 0; x < iter; x++) {
                             if (dataSa[i].active[1].doc[x].dokumen === resultDokumen[d]) {
                               dataSa[i].active[1].doc[x].status_dokumen === 3
-                                ? collect.push(moment(dataSa[i].active[1].doc[x].updatedAt).format('LLL'))
-                                : collect.push('-')
+                                ? collect.push(moment(dataSa[i].active[1].doc[x].createdAt).format('LLL'))
+                                : dataSa[i].active[1].doc[x].status_dokumen === 5
+                                  ? collect.push('Telat  ' + `(${moment(dataSa[i].active[1].doc[x].createdAt).format('LLL')})`)
+                                  : collect.push('-')
                             }
                           }
                           if (collect.length > 0) {
@@ -1707,8 +1745,10 @@ module.exports = {
                         for (let j = 0; j < dataSa[i].active[0].doc.length; j++) {
                           if (dataSa[i].active[0].doc[j].dokumen === resultDokumen[d]) {
                             dataSa[i].active[0].doc[j].status_dokumen === 3
-                              ? collect.push(moment(dataSa[i].active[0].doc[j].updatedAt).format('LLL'))
-                              : collect.push('-')
+                              ? collect.push(moment(dataSa[i].active[0].doc[j].createdAt).format('LLL'))
+                              : dataSa[i].active[0].doc[j].status_dokumen === 5
+                                ? collect.push('Telat  ' + `(${moment(dataSa[i].active[0].doc[j].createdAt).format('LLL')})`)
+                                : collect.push('-')
                           }
                         }
                         if (collect.length > 0) {
@@ -1721,8 +1761,10 @@ module.exports = {
                     temp.push(dataSa[i].dokumen.length)
                     if (dataSa[i].active[1] !== undefined) {
                       temp.push(dataSa[i].active[0].progress + dataSa[i].active[1].progress)
+                      temp.push(Math.round(((dataSa[i].active[0].progress + dataSa[i].active[1].progress) / dataSa[i].dokumen.length) * 100) + '%')
                     } else {
                       temp.push(dataSa[i].active[0].progress)
+                      temp.push(Math.round((dataSa[i].active[0].progress / dataSa[i].dokumen.length) * 100) + '%')
                     }
                     saBody.push(temp)
                   }
@@ -1857,7 +1899,7 @@ module.exports = {
                       where: {
                         [Op.and]: [
                           { kode_plant: kode[0] },
-                          { jenis_dokumen: { [Op.like]: `%${tipeValue}%` } }
+                          { jenis_dokumen: tipeValue }
                         ],
                         createdAt: {
                           [Op.lt]: last,
@@ -1876,7 +1918,7 @@ module.exports = {
                       model: documents,
                       as: 'dokumen',
                       where: {
-                        jenis_dokumen: { [Op.like]: `%${tipeValue}%` }
+                        jenis_dokumen: tipeValue
                       }
                     }
                   ]
@@ -1904,15 +1946,19 @@ module.exports = {
                       for (let j = 0; j < dataSa[i].active[0].doc.length; j++) {
                         if (dataSa[i].active[0].doc[j].dokumen === resultDokumen[d]) {
                           dataSa[i].active[0].doc[j].status_dokumen === 3
-                            ? collect.push(moment(dataSa[i].active[0].doc[j].updatedAt).format('LLL'))
-                            : collect.push('-')
+                            ? collect.push(moment(dataSa[i].active[0].doc[j].createdAt).format('LLL'))
+                            : dataSa[i].active[0].doc[j].status_dokumen === 5
+                              ? collect.push('Telat  ' + `(${moment(dataSa[i].active[0].doc[j].createdAt).format('LLL')})`)
+                              : collect.push('-')
                         }
                       }
                       for (let x = 0; x < iter; x++) {
                         if (dataSa[i].active[1].doc[x].dokumen === resultDokumen[d]) {
                           dataSa[i].active[1].doc[x].status_dokumen === 3
-                            ? collect.push(moment(dataSa[i].active[1].doc[x].updatedAt).format('LLL'))
-                            : collect.push('-')
+                            ? collect.push(moment(dataSa[i].active[1].doc[x].createdAt).format('LLL'))
+                            : dataSa[i].active[1].doc[x].status_dokumen === 5
+                              ? collect.push('Telat  ' + `(${moment(dataSa[i].active[1].doc[x].createdAt).format('LLL')})`)
+                              : collect.push('-')
                         }
                       }
                       if (collect.length > 0) {
@@ -1928,8 +1974,10 @@ module.exports = {
                     for (let j = 0; j < dataSa[i].active[0].doc.length; j++) {
                       if (dataSa[i].active[0].doc[j].dokumen === resultDokumen[d]) {
                         dataSa[i].active[0].doc[j].status_dokumen === 3
-                          ? collect.push(moment(dataSa[i].active[0].doc[j].updatedAt).format('LLL'))
-                          : collect.push('-')
+                          ? collect.push(moment(dataSa[i].active[0].doc[j].createdAt).format('LLL'))
+                          : dataSa[i].active[0].doc[j].status_dokumen === 5
+                            ? collect.push('Telat  ' + `(${moment(dataSa[i].active[0].doc[j].createdAt).format('LLL')})`)
+                            : collect.push('-')
                       }
                     }
                     if (collect.length > 0) {
@@ -1942,8 +1990,10 @@ module.exports = {
                 temp.push(dataSa[i].dokumen.length)
                 if (dataSa[i].active[1] !== undefined) {
                   temp.push(dataSa[i].active[0].progress + dataSa[i].active[1].progress)
+                  temp.push(Math.round(((dataSa[i].active[0].progress + dataSa[i].active[1].progress) / dataSa[i].dokumen.length) * 100) + '%')
                 } else {
                   temp.push(dataSa[i].active[0].progress)
+                  temp.push(Math.round((dataSa[i].active[0].progress / dataSa[i].dokumen.length) * 100) + '%')
                 }
                 saBody.push(temp)
               }
@@ -2306,7 +2356,8 @@ module.exports = {
                     [Op.gt]: now
                   }
                 },
-                order: [['id', 'DESC']],
+                order: [['id', 'ASC']],
+                limit: 10,
                 include: [
                   {
                     model: Path,
@@ -2369,7 +2420,8 @@ module.exports = {
                     [Op.gt]: now
                   }
                 },
-                order: [['id', 'DESC']],
+                order: [['id', 'ASC']],
+                limit: 10,
                 include: [
                   {
                     model: Path,
@@ -2455,10 +2507,8 @@ module.exports = {
       } else {
         page = parseInt(page)
       }
-      // const startOfMonth = moment().clone().startOf('month').format('YYYY-MM-DD hh:mm');
-      // const endOfMonth   = moment().clone().endOf('month').format('YYYY-MM-DD hh:mm');moment().startOf('year')
       let now = new Date(moment().clone().startOf('month').format('YYYY-MM-DD'))
-      let tomo = new Date(moment().clone().endOf('month').format('YYYY-MM-DD'))
+      let tomo = new Date(moment().add(1, 'month').endOf('month').format('YYYY-MM-DD'))
       if (tipeValue === 'monthly') {
         now = new Date(moment().clone().startOf('year').format('YYYY-MM-DD'))
         tomo = new Date(moment().clone().endOf('year').format('YYYY-MM-DD'))
