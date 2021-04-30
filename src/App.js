@@ -10,15 +10,15 @@ const cron = require('node-cron')
 
 const app = express()
 const server = require('http').createServer(app)
-const io = require('socket.io')(server, {
-  cors: {
-    origin: 'http://localhost:7575',
-    methods: ['GET', 'POST'],
-    allowedHeaders: ['Authorization'],
-    credentials: true
-  }
-})
-module.exports = io
+// const io = require('socket.io')(server, {
+//   cors: {
+//     origin: 'http://localhost:7575',
+//     methods: ['GET', 'POST'],
+//     allowedHeaders: ['Authorization'],
+//     credentials: true
+//   }
+// })
+// module.exports = io
 
 const { APP_PORT, APP_URL } = process.env
 
@@ -30,6 +30,7 @@ const userRoute = require('./routes/user')
 const authRoute = require('./routes/auth')
 const alasanRoute = require('./routes/alasan')
 const divisiRoute = require('./routes/divisi')
+const dateRoute = require('./routes/date')
 const emailRoute = require('./routes/email')
 const dokumenRoute = require('./routes/dokumen')
 const depoRoute = require('./routes/depo')
@@ -46,6 +47,7 @@ app.use('/download', express.static('assets/exports'))
 app.use('/auth', authRoute)
 app.use('/dashboard', authMiddleware, transRoute)
 app.use('/user', authMiddleware, userRoute)
+app.use('/date', authMiddleware, dateRoute)
 app.use('/alasan', authMiddleware, alasanRoute)
 app.use('/divisi', authMiddleware, divisiRoute)
 app.use('/email', authMiddleware, emailRoute)

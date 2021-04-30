@@ -23,4 +23,4 @@ module.exports = (sequelize, DataTypes) => {
     modelName: 'date_clossing'
   })
   return date_clossing
-};
+}

@@ -15,11 +15,11 @@ const storage = multer.diskStorage({
 })
 
 const fileFilter = (req, file, cb) => {
-  const allowedMimes = ['application/vnd.ms-excel', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet', 'application/pdf']
+  const allowedMimes = ['application/vnd.ms-excel', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet', 'application/pdf', 'application/x-7z-compressed', 'application/vnd.rar', 'application/zip']
   if (allowedMimes.includes(file.mimetype)) {
     return cb(null, true)
   }
-  return cb(new Error('Invalid file type. Only excel and pdf files are allowed.'), false)
+  return cb(new Error('Invalid file type. Only excel, pdf, zip, rar, and 7zip files are allowed.'), false)
 }
 
 module.exports = multer({ storage, fileFilter, limits: { fileSize: 20000000 } }).single('document')

@@ -1,5 +1,5 @@
 const { pagination } = require('../helpers/pagination')
-const { documents, sequelize, Path, depo, activity, pic, email, notif } = require('../models')
+const { documents, sequelize, Path, depo, activity, pic, email, notif, date_clossing } = require('../models')
 const { Op, QueryTypes } = require('sequelize')
 const response = require('../helpers/response')
 const joi = require('joi')
@@ -11,7 +11,6 @@ const { APP_URL } = process.env
 const mailer = require('../helpers/mailer')
 const moment = require('moment')
 const xlsx = require('xlsx')
-const io = require('../App')
 
 module.exports = {
   dashboard: async (req, res) => {
@@ -66,9 +65,10 @@ module.exports = {
       //   const id = req.user.id
       const level = req.user.level
       const kode = req.user.kode
-      let timeUser = moment().utc().format('YYYY-MM-DD')
-      const now = timeValue === '' ? new Date(moment().format('YYYY-MM-DD')) : new Date(moment(timeValue).format('YYYY-MM-DD'))
-      const tomo = timeValue === '' ? new Date(moment().add(1, 'days').format('YYYY-MM-DD')) : new Date(moment(timeValue).add(1, 'days').format('YYYY-MM-DD'))
+      let timeUser = new Date(moment().format('YYYY-MM-DD'))
+      let timeUserTomo = new Date(moment().add(1, 'days').format('YYYY-MM-DD'))
+      let now = timeValue === '' ? new Date(moment().format('YYYY-MM-DD')) : new Date(moment(timeValue).format('YYYY-MM-DD'))
+      let tomo = timeValue === '' ? new Date(moment().add(1, 'days').format('YYYY-MM-DD')) : new Date(moment(timeValue).add(1, 'days').format('YYYY-MM-DD'))
       if (level === 4) {
         const result = await depo.findOne({
           where: {
@@ -96,27 +96,83 @@ module.exports = {
           const pageInfo = pagination('/dokumen/get', req.query, page, limit, results.count)
           if (results) {
             if (tipeValue === 'monthly') {
-              timeUser = moment().utc().format('YYYY-MM')
+              timeUser = new Date(moment().clone().startOf('month').format('YYYY-MM-DD'))
+              timeUserTomo = new Date(moment().clone().endOf('month').format('YYYY-MM-DD'))
             }
-            const cek = await sequelize.query(`SELECT kode_plant, tipe from activities WHERE (kode_plant='${kode}' AND tipe='sa') AND jenis_dokumen LIKE '%${tipeValue}%'  AND createdAt LIKE '%${timeUser}%' LIMIT 1`, {
-              type: QueryTypes.SELECT
+            const cek = await activity.findAll({
+              where: {
+                [Op.and]: [
+                  { kode_plant: kode },
+                  { tipe: 'sa' },
+                  { jenis_dokumen: tipeValue }
+                ],
+                createdAt: {
+                  [Op.lt]: timeUserTomo,
+                  [Op.gt]: timeUser
+                }
+              }
             })
             if (cek.length > 0) {
               return response(res, 'list dokumen', { results, pageInfo })
             } else {
-              const data = {
-                kode_plant: kode,
-                status: 'Belum Upload',
-                documentDate: new Date(moment().subtract(1, 'days')),
-                access: 'unlock',
-                jenis_dokumen: tipeValue === 'daily' ? 'daily' : 'monthly',
-                tipe: 'sa'
-              }
-              const create = await activity.create(data)
-              if (create) {
-                return response(res, 'list dokumen', { results, pageInfo })
+              const now = new Date(moment().clone().startOf('month').format('YYYY-MM-DD'))
+              const tomo = new Date(moment().clone().endOf('month').format('YYYY-MM-DD'))
+              const find = await activity.findAll({
+                where: {
+                  [Op.and]: [
+                    { kode_plant: kode },
+                    { tipe: 'sa' },
+                    { jenis_dokumen: tipeValue }
+                  ],
+                  createdAt: {
+                    [Op.lt]: tomo,
+                    [Op.gt]: now
+                  }
+                }
+              })
+              if (find) {
+                const temp = []
+                find.map(item => {
+                  return temp.push(item.id)
+                })
+                for (let i = 0; i < find.length; i++) {
+                  const send = {
+                    access: 'lock'
+                  }
+                  const change = await activity.findByPk(temp[i])
+                  if (change) {
+                    await change.update(send)
+                  }
+                }
+                const data = {
+                  kode_plant: kode,
+                  status: 'Belum Upload',
+                  documentDate: new Date(moment().subtract(1, 'days')),
+                  access: 'unlock',
+                  jenis_dokumen: tipeValue === 'daily' ? 'daily' : 'monthly',
+                  tipe: 'sa'
+                }
+                const create = await activity.create(data)
+                if (create) {
+                  return response(res, 'list dokumen', { results, pageInfo })
+                } else {
+                  return response(res, 'failed to get dokumen', {}, 404, false)
+                }
               } else {
-                return response(res, 'failed to get dokumen', {}, 404, false)
+                const data = {
+                  kode_plant: kode,
+                  status: 'Belum Upload',
+                  documentDate: new Date(moment().subtract(1, 'days')),
+                  access: 'unlock',
+                  jenis_dokumen: tipeValue === 'daily' ? 'daily' : 'monthly',
+                  tipe: 'sa'
+                }
+                const create = await activity.create(data)
+                if (create) {
+                  return response(res, 'list dokumen', { results, pageInfo })
+                } else {
+                  return response(res, 'failed to get dokumen', {}, 404, false)
+                }
               }
             }
           } else {
@@ -150,27 +206,83 @@ module.exports = {
           const pageInfo = pagination('/dokumen/get', req.query, page, limit, results.count)
           if (results) {
             if (tipeValue === 'monthly') {
-              timeUser = moment().utc().format('YYYY-MM')
+              timeUser = new Date(moment().clone().startOf('month').format('YYYY-MM-DD'))
+              timeUserTomo = new Date(moment().clone().endOf('month').format('YYYY-MM-DD'))
             }
-            const cek = await sequelize.query(`SELECT kode_plant, tipe from activities WHERE (kode_plant='${kode}' AND tipe='kasir') AND jenis_dokumen LIKE '%${tipeValue}%' AND createdAt LIKE '%${timeUser}%' LIMIT 1`, {
-              type: QueryTypes.SELECT
+            const cek = await activity.findAll({
+              where: {
+                [Op.and]: [
+                  { kode_plant: kode },
+                  { tipe: 'kasir' },
+                  { jenis_dokumen: tipeValue }
+                ],
+                createdAt: {
+                  [Op.lt]: timeUserTomo,
+                  [Op.gt]: timeUser
+                }
+              }
             })
             if (cek.length > 0) {
               return response(res, 'list dokumen', { results, pageInfo })
             } else {
-              const data = {
-                kode_plant: kode,
-                status: 'Belum Upload',
-                documentDate: new Date(moment().subtract(1, 'days')),
-                access: 'unlock',
-                jenis_dokumen: tipeValue === 'daily' ? 'daily' : 'monthly',
-                tipe: 'kasir'
-              }
-              const create = await activity.create(data)
-              if (create) {
-                return response(res, 'list dokumen', { results, pageInfo })
+              const now = new Date(moment().clone().startOf('month').format('YYYY-MM-DD'))
+              const tomo = new Date(moment().clone().endOf('month').format('YYYY-MM-DD'))
+              const find = await activity.findAll({
+                where: {
+                  [Op.and]: [
+                    { kode_plant: kode },
+                    { tipe: 'kasir' },
+                    { jenis_dokumen: tipeValue }
+                  ],
+                  createdAt: {
+                    [Op.lt]: tomo,
+                    [Op.gt]: now
+                  }
+                }
+              })
+              if (find) {
+                const temp = []
+                find.map(item => {
+                  return temp.push(item.id)
+                })
+                for (let i = 0; i < find.length; i++) {
+                  const send = {
+                    access: 'lock'
+                  }
+                  const change = await activity.findByPk(temp[i])
+                  if (change) {
+                    await change.update(send)
+                  }
+                }
+                const data = {
+                  kode_plant: kode,
+                  status: 'Belum Upload',
+                  documentDate: new Date(moment().subtract(1, 'days')),
+                  access: 'unlock',
+                  jenis_dokumen: tipeValue === 'daily' ? 'daily' : 'monthly',
+                  tipe: 'kasir'
+                }
+                const create = await activity.create(data)
+                if (create) {
+                  return response(res, 'list dokumen', { results, pageInfo })
+                } else {
+                  return response(res, 'failed to get dokumen', {}, 404, false)
+                }
               } else {
-                return response(res, 'failed to get dokumen', {}, 404, false)
+                const data = {
+                  kode_plant: kode,
+                  status: 'Belum Upload',
+                  documentDate: new Date(moment().subtract(1, 'days')),
+                  access: 'unlock',
+                  jenis_dokumen: tipeValue === 'daily' ? 'daily' : 'monthly',
+                  tipe: 'kasir'
+                }
+                const create = await activity.create(data)
+                if (create) {
+                  return response(res, 'list dokumen', { results, pageInfo })
+                } else {
+                  return response(res, 'failed to get dokumen', {}, 404, false)
+                }
               }
             }
           } else {
@@ -212,6 +324,10 @@ module.exports = {
           if (depos.length > 0) {
             const sa = []
             const kasir = []
+            if (tipeValue === 'monthly') {
+              now = new Date(moment(timeValue).startOf('month').format('YYYY-MM-DD'))
+              tomo = new Date(moment(timeValue).endOf('month').format('YYYY-MM-DD'))
+            }
             for (let i = 0; i < depos.length; i++) {
               const result = await depo.findAndCountAll({
                 where: {
@@ -354,6 +470,10 @@ module.exports = {
           if (depos.length > 0) {
             const sa = []
             const kasir = []
+            if (tipeValue === 'monthly') {
+              now = new Date(moment(timeValue).startOf('month').format('YYYY-MM-DD'))
+              tomo = new Date(moment(timeValue).endOf('month').format('YYYY-MM-DD'))
+            }
             for (let i = 0; i < depos.length; i++) {
               const result = await depo.findAndCountAll({
                 where: {
@@ -495,6 +615,10 @@ module.exports = {
           if (depos.length > 0) {
             const sa = []
             const kasir = []
+            if (tipeValue === 'monthly') {
+              now = new Date(moment(timeValue).startOf('month').format('YYYY-MM-DD'))
+              tomo = new Date(moment(timeValue).endOf('month').format('YYYY-MM-DD'))
+            }
             for (let i = 0; i < depos.length; i++) {
               const result = await depo.findAndCountAll({
                 where: {
@@ -611,6 +735,7 @@ module.exports = {
   },
   uploadDocument: async (req, res) => {
     const id = req.params.id
+    const idAct = req.params.idAct
     const level = req.user.level
     const kode = req.user.kode
     let time = req.params.time
@@ -631,36 +756,112 @@ module.exports = {
           return response(res, err.message, {}, 401, false)
         } else {
           const dokumen = `assets/documents/${req.file.filename}`
-          console.log(req.file)
           if (level === 5) {
             const result = await documents.findByPk(id)
             if (result) {
-              const cek = await sequelize.query(`SELECT id from activities WHERE (kode_plant='${kode}' AND tipe='kasir') AND createdAt LIKE '%${time}%' AND jenis_dokumen='${result.jenis_dokumen}' LIMIT 1`, {
-                type: QueryTypes.SELECT
-              })
-              if (cek.length > 0) {
-                const send = { dokumen: result.nama_dokumen, activityId: cek[0].id, path: dokumen, kode_depo: kode, status_dokumen: 1 }
-                const upload = await Path.create(send)
-                if (upload) {
-                  const data = {
-                    kode_plant: kode,
-                    reject: 'false',
-                    upload: 'true',
-                    activityId: cek[0].id,
-                    pathId: upload.id,
-                    tipe: 'kasir'
-                  }
-                  const result = await notif.create(data)
-                  if (result) {
-                    return response(res, 'successfully upload dokumen', { upload })
-                  } else {
-                    return response(res, 'failed to upload dokumen', {}, 404, false)
-                  }
-                } else {
-                  return response(res, 'failed to upload dokumen', {}, 404, false)
-                }
+              const active = await activity.findByPk(idAct)
+              if (active.access === 'lock') {
+                return response(res, 'Dokumen ini sudah di lock, hubungi spv untuk mengizinkan upload dokumen', {}, 404, false)
               } else {
-                return response(res, 'failed to upload dokumen', {}, 404, false)
+                if (result.jenis_dokumen === 'daily') {
+                  const time = await date_clossing.findOne({
+                    where: {
+                      jenis: 'daily'
+                    }
+                  })
+                  if (moment().format('HH:mm') < moment(time.time).format('HH:mm')) {
+                    const send = { dokumen: result.nama_dokumen, activityId: idAct, path: dokumen, kode_depo: kode, status_dokumen: 1 }
+                    const upload = await Path.create(send)
+                    if (upload) {
+                      const data = {
+                        kode_plant: kode,
+                        reject: 'false',
+                        upload: 'true',
+                        activityId: idAct,
+                        pathId: upload.id,
+                        tipe: 'kasir'
+                      }
+                      const result = await notif.create(data)
+                      if (result) {
+                        return response(res, 'successfully upload dokumen', { upload })
+                      } else {
+                        return response(res, 'failed to upload dokumen', {}, 404, false)
+                      }
+                    } else {
+                      return response(res, 'failed to upload dokumen', {}, 404, false)
+                    }
+                  } else {
+                    const send = { dokumen: result.nama_dokumen, activityId: idAct, path: dokumen, kode_depo: kode, status_dokumen: 4 }
+                    const upload = await Path.create(send)
+                    if (upload) {
+                      const data = {
+                        kode_plant: kode,
+                        reject: 'false',
+                        upload: 'true',
+                        activityId: idAct,
+                        pathId: upload.id,
+                        tipe: 'kasir'
+                      }
+                      const result = await notif.create(data)
+                      if (result) {
+                        return response(res, 'successfully upload dokumen', { upload })
+                      } else {
+                        return response(res, 'failed to upload dokumen', {}, 404, false)
+                      }
+                    } else {
+                      return response(res, 'failed to upload dokumen', {}, 404, false)
+                    }
+                  }
+                } else if (result.jenis_dokumen === 'monthly') {
+                  const time = await date_clossing.findOne({
+                    where: {
+                      jenis: 'monthly'
+                    }
+                  })
+                  if (moment().format('LL') < moment(time.day).format('LL')) {
+                    const send = { dokumen: result.nama_dokumen, activityId: idAct, path: dokumen, kode_depo: kode, status_dokumen: 1 }
+                    const upload = await Path.create(send)
+                    if (upload) {
+                      const data = {
+                        kode_plant: kode,
+                        reject: 'false',
+                        upload: 'true',
+                        activityId: idAct,
+                        pathId: upload.id,
+                        tipe: 'kasir'
+                      }
+                      const result = await notif.create(data)
+                      if (result) {
+                        return response(res, 'successfully upload dokumen', { upload })
+                      } else {
+                        return response(res, 'failed to upload dokumen', {}, 404, false)
+                      }
+                    } else {
+                      return response(res, 'failed to upload dokumen', {}, 404, false)
+                    }
+                  } else {
+                    const send = { dokumen: result.nama_dokumen, activityId: idAct, path: dokumen, kode_depo: kode, status_dokumen: 4 }
+                    const upload = await Path.create(send)
+                    if (upload) {
+                      const data = {
+                        kode_plant: kode,
+                        reject: 'false',
+                        upload: 'true',
+                        activityId: idAct,
+                        pathId: upload.id,
+                        tipe: 'kasir'
+                      }
+                      const result = await notif.create(data)
+                      if (result) {
+                        return response(res, 'successfully upload dokumen', { upload })
+                      } else {
+                        return response(res, 'failed to upload dokumen', {}, 404, false)
+                      }
+                    } else {
+                      return response(res, 'failed to upload dokumen', {}, 404, false)
+                    }
+                  }
+                }
               }
             } else {
               return response(res, 'failed to upload dokumen', {}, 404, false)
@@ -668,32 +869,109 @@ module.exports = {
           } else if (level === 4) {
             const result = await documents.findByPk(id)
             if (result) {
-              const cek = await sequelize.query(`SELECT id from activities WHERE (kode_plant='${kode}' AND tipe='sa') AND createdAt LIKE '%${time}%' AND jenis_dokumen='${result.jenis_dokumen}' LIMIT 1`, {
-                type: QueryTypes.SELECT
-              })
-              if (cek.length > 0) {
-                const send = { dokumen: result.nama_dokumen, activityId: cek[0].id, path: dokumen, kode_depo: kode, status_dokumen: 1 }
-                const upload = await Path.create(send)
-                if (upload) {
-                  const data = {
-                    kode_plant: kode,
-                    reject: 'false',
-                    upload: 'true',
-                    activityId: cek[0].id,
-                    pathId: upload.id,
-                    tipe: 'sa'
-                  }
-                  const result = await notif.create(data)
-                  if (result) {
-                    return response(res, 'successfully upload dokumen', { upload })
-                  } else {
-                    return response(res, 'failed to upload dokumen', {}, 404, false)
-                  }
-                } else {
-                  return response(res, 'failed to upload dokumen', {}, 404, false)
-                }
+              const active = await activity.findByPk(idAct)
+              if (active.access === 'lock') {
+                return response(res, 'Dokumen ini sudah di lock, hubungi spv untuk mengizinkan upload dokumen', {}, 404, false)
               } else {
-                return response(res, 'failed to upload dokumen', {}, 404, false)
+                if (result.jenis_dokumen === 'daily') {
+                  const time = await date_clossing.findOne({
+                    where: {
+                      jenis: 'daily'
+                    }
+                  })
+                  if (moment().format('HH:mm') < moment(time.time).format('HH:mm')) {
+                    const send = { dokumen: result.nama_dokumen, activityId: idAct, path: dokumen, kode_depo: kode, status_dokumen: 1 }
+                    const upload = await Path.create(send)
+                    if (upload) {
+                      const data = {
+                        kode_plant: kode,
+                        reject: 'false',
+                        upload: 'true',
+                        activityId: idAct,
+                        pathId: upload.id,
+                        tipe: 'sa'
+                      }
+                      const result = await notif.create(data)
+                      if (result) {
+                        return response(res, 'successfully upload dokumen', { upload })
+                      } else {
+                        return response(res, 'failed to upload dokumen', {}, 404, false)
+                      }
+                    } else {
+                      return response(res, 'failed to upload dokumen', {}, 404, false)
+                    }
+                  } else {
+                    const send = { dokumen: result.nama_dokumen, activityId: idAct, path: dokumen, kode_depo: kode, status_dokumen: 4 }
+                    const upload = await Path.create(send)
+                    if (upload) {
+                      const data = {
+                        kode_plant: kode,
+                        reject: 'false',
+                        upload: 'true',
+                        activityId: idAct,
+                        pathId: upload.id,
+                        tipe: 'sa'
+                      }
+                      const result = await notif.create(data)
+                      if (result) {
+                        return response(res, 'successfully upload dokumen', { upload })
+                      } else {
+                        return response(res, 'failed to upload dokumen', {}, 404, false)
+                      }
+                    } else {
+                      return response(res, 'failed to upload dokumen', {}, 404, false)
+                    }
+                  }
+                } else if (result.jenis_dokumen === 'monthly') {
+                  const time = await date_clossing.findOne({
+                    where: {
+                      jenis: 'monthly'
+                    }
+                  })
+                  if (moment().format('LL') < moment(time.day).format('LL')) {
+                    const send = { dokumen: result.nama_dokumen, activityId: idAct, path: dokumen, kode_depo: kode, status_dokumen: 1 }
+                    const upload = await Path.create(send)
+                    if (upload) {
+                      const data = {
+                        kode_plant: kode,
+                        reject: 'false',
+                        upload: 'true',
+                        activityId: idAct,
+                        pathId: upload.id,
+                        tipe: 'sa'
+                      }
+                      const result = await notif.create(data)
+                      if (result) {
+                        return response(res, 'successfully upload dokumen', { upload })
+                      } else {
+                        return response(res, 'failed to upload dokumen', {}, 404, false)
+                      }
+                    } else {
+                      return response(res, 'failed to upload dokumen', {}, 404, false)
+                    }
+                  } else {
+                    const send = { dokumen: result.nama_dokumen, activityId: idAct, path: dokumen, kode_depo: kode, status_dokumen: 4 }
+                    const upload = await Path.create(send)
+                    if (upload) {
+                      const data = {
+                        kode_plant: kode,
+                        reject: 'false',
+                        upload: 'true',
+                        activityId: idAct,
+                        pathId: upload.id,
+                        tipe: 'sa'
+                      }
+                      const result = await notif.create(data)
+                      if (result) {
+                        return response(res, 'successfully upload dokumen', { upload })
+                      } else {
+                        return response(res, 'failed to upload dokumen', {}, 404, false)
+                      }
+                    } else {
+                      return response(res, 'failed to upload dokumen', {}, 404, false)
+                    }
+                  }
+                }
               }
             } else {
               return response(res, 'failed to upload dokumen', {}, 404, false)
@@ -708,6 +986,7 @@ module.exports = {
   editUploadDocument: async (req, res) => {
     const id = req.params.id
     const level = req.user.level
+    const idAct = req.params.idAct
     uploadHelper(req, res, async function (err) {
       try {
         if (err instanceof multer.MulterError) {
@@ -723,9 +1002,14 @@ module.exports = {
         if (level === 4 || level === 5) {
           const valid = await Path.findByPk(id)
           if (valid) {
-            const send = { path: dokumen }
-            await valid.update(send)
-            return response(res, 'successfully upload dokumen', { send })
+            const active = await activity.findByPk(idAct)
+            if (active.access === 'lock') {
+              return response(res, 'Dokumen ini sudah di lock, hubungi spv untuk mengizinkan upload dokumen', {}, 404, false)
+            } else {
+              const send = { path: dokumen }
+              await valid.update(send)
+              return response(res, 'successfully upload dokumen', { send })
+            }
           } else {
             return response(res, 'failed to edit upload dokumen', {}, 404, false)
           }
@@ -848,21 +1132,44 @@ module.exports = {
     }
   },
   approveDocument: async (req, res) => {
-    try {
-      const level = req.user.level
-      const id = req.params.id
-      const idAct = req.params.idAct
-      if (level === 1 || level === 2 || level === 3) {
-        const result = await Path.findByPk(id)
-        const approve = { status_dokumen: 3 }
-        if (result) {
-          if (result.status_dokumen === 3) {
+    // try {
+    const level = req.user.level
+    const id = req.params.id
+    const idAct = req.params.idAct
+    if (level === 1 || level === 2 || level === 3) {
+      const result = await Path.findByPk(id)
+      let approve = { status_dokumen: 3 }
+      if (result) {
+        if (result.status_dokumen === 3 || result.status_dokumen === 5) {
+          const find = await notif.findOne({
+            where: {
+              [Op.or]: [
+                { upload: 'true' },
+                { reject: 'true' }
+              ],
+              pathId: id
+            }
+          })
+          if (find) {
+            await find.destroy()
+            return response(res, 'succes approve dokumen')
+          } else {
+            return response(res, 'succes approve dokumen')
+          }
+        } else if (result.status_dokumen === 4 || result.status_dokumen === 6) {
+          approve = { status_dokumen: 5 }
+          await result.update(approve)
+          const act = await activity.findByPk(idAct)
+          if (act) {
+            const send = { progress: act.progress + 1 }
+            await act.update(send)
             const find = await notif.findOne({
               where: {
-                [Op.and]: [
-                  { pathId: id },
+                [Op.or]: [
+                  { upload: 'true' },
                   { reject: 'true' }
-                ]
+                ],
+                pathId: id
               }
             })
             if (find) {
@@ -872,89 +1179,73 @@ module.exports = {
               return response(res, 'succes approve dokumen')
             }
           } else {
-            await result.update(approve)
-            const act = await activity.findByPk(idAct)
-            if (act) {
-              const send = { progress: act.progress + 1 }
-              await act.update(send)
-              const find = await notif.findOne({
-                where: {
-                  [Op.and]: [
-                    { pathId: id },
-                    { reject: 'true' }
-                  ]
-                }
-              })
-              if (find) {
-                await find.destroy()
-                return response(res, 'succes approve dokumen')
-              } else {
-                return response(res, 'succes approve dokumen')
-              }
-            } else {
-              return response(res, 'failed approve dokumen', {}, 404, false)
-            }
+            return response(res, 'failed approve dokumen', {}, 404, false)
           }
         } else {
-          return response(res, 'failed approve dokumen', {}, 404, false)
+          approve = { status_dokumen: 3 }
+          await result.update(approve)
+          const act = await activity.findByPk(idAct)
+          if (act) {
+            const send = { progress: act.progress + 1 }
+            await act.update(send)
+            const find = await notif.findOne({
+              where: {
+                [Op.or]: [
+                  { upload: 'true' },
+                  { reject: 'true' }
+                ],
+                pathId: id
+              }
+            })
+            if (find) {
+              await find.destroy()
+              return response(res, 'succes approve dokumen')
+            } else {
+              return response(res, 'succes approve dokumen')
+            }
+          } else {
+            return response(res, 'failed approve dokumen', {}, 404, false)
+          }
         }
       } else {
-        return response(res, "you're not super administrator", {}, 404, false)
+        return response(res, 'failed approve dokumen', {}, 404, false)
       }
-    } catch (error) {
-      return response(res, error.message, {}, 500, false)
+    } else {
+      return response(res, "you're not super administrator", {}, 404, false)
     }
+    // } catch (error) {
+    //   return response(res, error.message, {}, 500, false)
+    // }
   },
   rejectDocument: async (req, res) => {
-    try {
-      const level = req.user.level
-      const id = req.params.id
-      const idAct = req.params.idAct
-      const schema = joi.object({
-        alasan: joi.string().required()
-      })
-      const { value: results, error } = schema.validate(req.body)
-      if (error) {
-        return response(res, 'Error', { error: error.message }, 404, false)
-      } else {
-        if (level === 1 || level === 2 || level === 3) {
-          const result = await Path.findByPk(id)
-          const send = {
-            alasan: results.alasan,
-            status_dokumen: 0
-          }
-          if (result) {
-            if (result.status_dokumen === 3) {
-              await result.update(send)
-              const act = await activity.findByPk(idAct)
-              if (act) {
-                const desc = { progress: act.progress - 1 }
-                const update = await act.update(desc)
-                if (update) {
-                  const data = {
-                    kode_plant: act.kode_plant,
-                    reject: 'true',
-                    upload: 'false',
-                    activityId: idAct,
-                    pathId: id,
-                    tipe: act.tipe
-                  }
-                  const result = await notif.create(data)
-                  io.emit(act.kode_plant, { idAct, reject: true })
-                  if (result) {
-                    return response(res, 'success reject dokumen')
-                  } else {
-                    return response(res, 'failed reject dokumen', {}, 404, false)
-                  }
-                } else {
-                  return response(res, 'failed reject dokumen', {}, 404, false)
-                }
-              } else {
-                return response(res, 'failed reject dokumen', {}, 404, false)
-              }
-            } else {
-              const update = await result.update(send)
-              const act = await activity.findByPk(idAct)
+    // try {
+    const level = req.user.level
+    const id = req.params.id
+    const idAct = req.params.idAct
+    const schema = joi.object({
+      alasan: joi.string().required()
+    })
+    const { value: results, error } = schema.validate(req.body)
+    if (error) {
+      return response(res, 'Error', { error: error.message }, 404, false)
+    } else {
+      if (level === 1 || level === 2 || level === 3) {
+        const result = await Path.findByPk(id)
+        let send = {
+          alasan: results.alasan,
+          status_dokumen: 0
+        }
+        if (result) {
+          if (result.status_dokumen === 3) {
+            send = {
+              alasan: results.alasan,
+              status_dokumen: 0
+            }
+            await result.update(send)
+            const act = await activity.findByPk(idAct)
+            if (act) {
+              const desc = { progress: act.progress - 1 }
+              const update = await act.update(desc)
               if (update) {
                 const data = {
                   kode_plant: act.kode_plant,
@@ -964,27 +1255,117 @@ module.exports = {
                   pathId: id,
                   tipe: act.tipe
                 }
-                const result = await notif.create(data)
-                io.emit(act.kode_plant, { idAct, data: data })
-                if (result) {
+                const find = await notif.findOne({
+                  where: {
+                    [Op.or]: [
+                      { upload: 'true' },
+                      { reject: 'true' }
+                    ],
+                    pathId: id
+                  }
+                })
+                if (find) {
+                  await notif.create(data)
                   return response(res, 'success reject dokumen')
                 } else {
-                  return response(res, 'failed reject dokumen', {}, 404, false)
+                  await notif.create(data)
+                  return response(res, 'success reject dokumen')
                 }
               } else {
                 return response(res, 'failed reject dokumen', {}, 404, false)
               }
+            } else {
+              return response(res, 'failed reject dokumen', {}, 404, false)
             }
+          } else if (result.status_dokumen === 5) {
+            send = {
+              alasan: results.alasan,
+              status_dokumen: 6
+            }
+            await result.update(send)
+            const act = await activity.findByPk(idAct)
+            if (act) {
+              const desc = { progress: act.progress - 1 }
+              const update = await act.update(desc)
+              if (update) {
+                const data = {
+                  kode_plant: act.kode_plant,
+                  reject: 'true',
+                  upload: 'false',
+                  activityId: idAct,
+                  pathId: id,
+                  tipe: act.tipe
+                }
+                const find = await notif.findOne({
+                  where: {
+                    [Op.or]: [
+                      { upload: 'true' },
+                      { reject: 'true' }
+                    ],
+                    pathId: id
+                  }
+                })
+                if (find) {
+                  await notif.create(data)
+                  return response(res, 'success reject dokumen')
+                } else {
+                  await notif.create(data)
+                  return response(res, 'success reject dokumen')
+                }
+              } else {
+                return response(res, 'failed reject dokumen', {}, 404, false)
+              }
+            } else {
+              return response(res, 'failed reject dokumen', {}, 404, false)
+            }
+          } else if (result.status_dokumen === 6 || result.status_dokumen === 0) {
+            return response(res, 'success reject dokumen')
           } else {
-            return response(res, 'failed reject dokumen', {}, 404, false)
+            send = {
+              alasan: results.alasan,
+              status_dokumen: 0
+            }
+            const update = await result.update(send)
+            const act = await activity.findByPk(idAct)
+            if (act && update) {
+              const data = {
+                kode_plant: act.kode_plant,
+                reject: 'true',
+                upload: 'false',
+                activityId: idAct,
+                pathId: id,
+                tipe: act.tipe
+              }
+              const find = await notif.findOne({
+                where: {
+                  [Op.or]: [
+                    { upload: 'true' },
+                    { reject: 'true' }
+                  ],
+                  pathId: id
+                }
+              })
+              if (find) {
+                await notif.create(data)
+                return response(res, 'success reject dokumen')
+              } else {
+                await notif.create(data)
+                return response(res, 'success reject dokumen')
+              }
+            } else {
+              return response(res, 'failed reject dokumen', {}, 404, false)
+            }
           }
         } else {
-          return response(res, "you're not super administrator", {}, 404, false)
+          return response(res, 'failed reject dokumen', {}, 404, false)
         }
+      } else {
+        return response(res, "you're not super administrator", {}, 404, false)
       }
-    } catch (error) {
-      return response(res, error.message, {}, 500, false)
     }
+    // } catch (error) {
+    //   return response(res, error.message, {}, 500, false)
+    // }
   },
   showDokumen: async (req, res) => {
     try {
@@ -1117,8 +1498,12 @@ module.exports = {
     } else {
       tipeValue = tipe || 'daily'
     }
-    const now = timeFrom === '' ? new Date(moment().format('YYYY-MM-DD')) : new Date(moment(timeFrom).format('YYYY-MM-DD'))
-    const tomo = timeTo === '' ? new Date(moment().format('YYYY-MM-DD 24:00:00')) : new Date(moment(timeTo).format('YYYY-MM-DD 24:00:00'))
+    let now = timeFrom === '' ? new Date(moment().format('YYYY-MM-DD')) : new Date(moment(timeFrom).format('YYYY-MM-DD'))
+    let tomo = timeTo === '' ? new Date(moment().format('YYYY-MM-DD 24:00:00')) : new Date(moment(timeTo).format('YYYY-MM-DD 24:00:00'))
+    if (tipeValue === 'monthly') {
+      now = new Date(moment(timeFrom).startOf('month').format('YYYY-MM-DD'))
+      tomo = new Date(moment(timeTo).endOf('month').format('YYYY-MM-DD'))
+    }
     const schema = joi.object({
       kode_plant: joi.string().allow(''),
       pic: joi.string().allow('')
@@ -1128,7 +1513,7 @@ module.exports = {
       return response(res, 'Error', { error: error.message }, 404, false)
     } else {
       const first = ['No', 'GROM', 'PIC Acc', 'Kode Plant', 'Nama Area', 'Profit Center', 'Kode SAP 1', 'Status Depo']
-      const last = ['Total Laporan', 'Dokumen Yang Telah Diupload']
+      const last = ['Total Laporan', 'Dokumen Yang Telah Diverifikasi', 'Persantase']
       if (level === 1 || level === 2 || level === 3) {
         if (results.pic !== '') {
           const findPic = await pic.findAll({
@@ -1213,7 +1598,11 @@ module.exports = {
                   const temp = []
                   for (let i = 0; i < sa.length; i++) {
                     for (let j = 0; j < sa[i].active.length; j++) {
-                      temp.push(`${sa[i].kode_plant} ${moment(sa[i].active[j].createdAt).format('YYYY/MM/DD')}`)
+                      if (tipeValue === 'monthly') {
+                        temp.push(`${sa[i].kode_plant} ${moment(sa[i].active[j].createdAt).format('YYYY/MM')}`)
+                      } else {
+                        temp.push(`${sa[i].kode_plant} ${moment(sa[i].active[j].createdAt).format('YYYY/MM/DD')}`)
+                      }
                     }
                   }
                   const object = {}
@@ -1230,8 +1619,12 @@ module.exports = {
                   const dataSa = []
                   for (let i = 0; i < result.length; i++) {
                     const kode = result[i].split(' ')
-                    const begin = new Date(moment(kode[1]).format('YYYY-MM-DD'))
-                    const last = new Date(moment(kode[1]).format('YYYY-MM-DD 24:00:00'))
+                    let begin = new Date(moment(kode[1]).format('YYYY-MM-DD'))
+                    let last = new Date(moment(kode[1]).format('YYYY-MM-DD 24:00:00'))
+                    if (tipeValue === 'monthly') {
+                      begin = new Date(moment(timeFrom).startOf('month').format('YYYY-MM-DD'))
+                      last = new Date(moment(timeTo).endOf('month').format('YYYY-MM-DD'))
+                    }
                     const hasil = await depo.findAll({
                       where: {
                         kode_plant: kode[0]
@@ -1426,7 +1819,11 @@ module.exports = {
               const temp = []
               for (let i = 0; i < sa.length; i++) {
                 for (let j = 0; j < sa[i].active.length; j++) {
-                  temp.push(`${sa[i].kode_plant} ${moment(sa[i].active[j].createdAt).format('YYYY/MM/DD')}`)
+                  if (tipeValue === 'monthly') {
+                    temp.push(`${sa[i].kode_plant} ${moment(sa[i].active[j].createdAt).format('YYYY/MM')}`)
+                  } else {
+                    temp.push(`${sa[i].kode_plant} ${moment(sa[i].active[j].createdAt).format('YYYY/MM/DD')}`)
+                  }
                 }
               }
               const object = {}
@@ -1443,8 +1840,12 @@ module.exports = {
               const dataSa = []
               for (let i = 0; i < result.length; i++) {
                 const kode = result[i].split(' ')
-                const begin = new Date(moment(kode[1]).format('YYYY-MM-DD'))
-                const last = new Date(moment(kode[1]).format('YYYY-MM-DD 24:00:00'))
+                let begin = new Date(moment(kode[1]).format('YYYY-MM-DD'))
+                let last = new Date(moment(kode[1]).format('YYYY-MM-DD 24:00:00'))
+                if (tipeValue === 'monthly') {
+                  begin = new Date(moment(timeFrom).startOf('month').format('YYYY-MM-DD'))
+                  last = new Date(moment(timeTo).endOf('month').format('YYYY-MM-DD'))
+                }
                 const hasil = await depo.findAll({
                   where: {
                     kode_plant: kode[0]
@@ -1815,6 +2216,8 @@ module.exports = {
       const kode = req.user.kode
       const level = req.user.level
       const name = req.user.name
+      const now = new Date(moment().format('YYYY-MM-DD'))
+      const tomo = new Date(moment().format('YYYY-MM-DD 24:00:00'))
       console.log(kode)
       console.log()
       if (level === 4) {
@@ -1897,7 +2300,11 @@ module.exports = {
                   [Op.and]: [
                     { kode_plant: depos[i].kode_depo },
                     { upload: 'true' }
-                  ]
+                  ],
+                  createdAt: {
+                    [Op.lt]: tomo,
+                    [Op.gt]: now
+                  }
                 },
                 order: [['id', 'DESC']],
                 include: [
@@ -1956,7 +2363,11 @@ module.exports = {
                   [Op.and]: [
                     { kode_plant: depos[i].kode_depo },
                     { upload: 'true' }
-                  ]
+                  ],
+                  createdAt: {
+                    [Op.lt]: tomo,
+                    [Op.gt]: now
+                  }
                 },
                 order: [['id', 'DESC']],
                 include: [
@@ -2045,9 +2456,13 @@ module.exports = {
         page = parseInt(page)
       }
       // const startOfMonth = moment().clone().startOf('month').format('YYYY-MM-DD hh:mm');
-      // const endOfMonth   = moment().clone().endOf('month').format('YYYY-MM-DD hh:mm');
-      const now = new Date(moment().clone().startOf('month').format('YYYY-MM-DD'))
-      const tomo = new Date(moment().clone().endOf('month').format('YYYY-MM-DD'))
+      // const endOfMonth   = moment().clone().endOf('month').format('YYYY-MM-DD hh:mm');moment().startOf('year')
+      let now = new Date(moment().clone().startOf('month').format('YYYY-MM-DD'))
+      let tomo = new Date(moment().clone().endOf('month').format('YYYY-MM-DD'))
+      if (tipeValue === 'monthly') {
+        now = new Date(moment().clone().startOf('year').format('YYYY-MM-DD'))
+        tomo = new Date(moment().clone().endOf('year').format('YYYY-MM-DD'))
+      }
       if (level === 2) {
         const results = await pic.findAndCountAll({
           where: {
@@ -2100,7 +2515,7 @@ module.exports = {
                         [Op.gt]: now
                       }
                     },
-                    limit: 30,
+                    limit: 31,
                     include: [
                       {
                         model: Path,
@@ -2149,7 +2564,7 @@ module.exports = {
                         [Op.gt]: now
                       }
                     },
-                    limit: 30,
+                    limit: 31,
                     include: [
                       {
                         model: Path,
