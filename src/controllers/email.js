@@ -359,8 +359,8 @@ module.exports = {
         const workbook = new excel.Workbook()
         const worksheet = workbook.addWorksheet()
         const arr = []
-        const header = ['Kode Plant', 'AREA', 'Email AOS', 'Email HO PIC', 'Email BM', 'Email Grom', 'Email ROM', 'Email HO 1', 'Email HO 2', 'Email HO 3']
-        const key = ['kode_plant', 'area', 'email_aos', 'email_ho_pic', 'email_bm', 'email_grom', 'email_rom', 'email_ho_1', 'email_ho_2', 'email_ho_3']
+        const header = ['Kode Plant', 'AREA', 'Email SA/KASIR', 'Email AOS', 'Email HO PIC', 'Email BM', 'Email Grom', 'Email ROM', 'Email HO 1', 'Email HO 2', 'Email HO 3', 'Email HO 4', 'Tipe']
+        const key = ['kode_plant', 'area', 'email_sa_kasir', 'email_aos', 'email_ho_pic', 'email_bm', 'email_grom', 'email_rom', 'email_ho_1', 'email_ho_2', 'email_ho_3', 'email_ho_4', 'tipe']
         for (let i = 0; i < header.length; i++) {
           let temp = { header: header[i], key: key[i] }
           arr.push(temp)
