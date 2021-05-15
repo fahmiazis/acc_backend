@@ -90,8 +90,8 @@ module.exports = {
               [Op.not]: { status: 'inactive' }
             },
             order: [[sortValue, typeSortValue]],
-            limit: limit,
-            offset: (page - 1) * limit
+            limit: 100,
+            offset: (page - 1) * 100
           })
           const pageInfo = pagination('/dokumen/get', req.query, page, limit, results.count)
           if (results) {
@@ -2357,7 +2357,7 @@ module.exports = {
                   }
                 },
                 order: [['id', 'ASC']],
-                limit: 10,
+                limit: 1,
                 include: [
                   {
                     model: Path,
@@ -2421,7 +2421,7 @@ module.exports = {
                   }
                 },
                 order: [['id', 'ASC']],
-                limit: 10,
+                limit: 1,
                 include: [
                   {
                     model: Path,
