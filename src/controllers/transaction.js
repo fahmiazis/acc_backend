@@ -1,6 +1,6 @@
 const { pagination } = require('../helpers/pagination')
-const { documents, sequelize, Path, depo, activity, pic, email, notif, date_clossing } = require('../models')
-const { Op, QueryTypes } = require('sequelize')
+const { documents, Path, depo, activity, pic, email, notif, date_clossing } = require('../models')
+const { Op } = require('sequelize')
 const response = require('../helpers/response')
 const joi = require('joi')
 const uploadHelper = require('../helpers/upload')
@@ -1540,16 +1540,17 @@ module.exports = {
     }
     const schema = joi.object({
       kode_plant: joi.string().allow(''),
-      pic: joi.string().allow('')
+      pic: joi.string().allow(''),
+      spv: joi.string().allow('')
     })
     const { value: results, error } = schema.validate(req.body)
     if (error) {
       return response(res, 'Error', { error: error.message }, 404, false)
     } else {
       const first = ['No', 'GROM', 'PIC Acc', 'Kode Plant', 'Nama Area', 'Profit Center', 'Kode SAP 1', 'Status Depo']
-      const last = ['Total Laporan', 'Dokumen Yang Telah Diverifikasi', 'Persantase']
+      const last = ['Total Laporan', 'Dokumen Yang Telah Diverifikasi', 'Persentase']
       if (level === 1 || level === 2 || level === 3) {
-        if (results.pic !== '') {
+        if (results.pic !== '' && results.pic !== 'all') {
           const findPic = await pic.findAll({
             where: {
               pic: { [Op.like]: `%${results.pic}%` }
@@ -1798,7 +1799,7 @@ module.exports = {
           } else {
             return response(res, 'failed to get report', {}, 404, false)
           }
-        } else if (results.kode_plant !== '') {
+        } else if (results.kode_plant !== '' && results.kode_plant !== 'all') {
           const sa = await depo.findAll({
             where: {
               kode_plant: results.kode_plant
@@ -2019,6 +2020,500 @@ module.exports = {
               return response(res, 'success', { link: `${APP_URL}/download/${name}` })
             } else {
               return response(res, 'failed to get report', {}, 404, false)
+            }
+          } else {
+            return response(res, 'failed to get report', {}, 404, false)
+          }
+        } else if (results.kode_plant === 'all' || results.pic === 'all') {
+          const findPic = await pic.findAll()
+          if (findPic) {
+            const depos = []
+            findPic.map(x => {
+              return (
+                depos.push(x)
+              )
+            })
+            if (depos.length > 0) {
+              const sa = []
+              const kasir = []
+              for (let i = 0; i < depos.length; i++) {
+                const result = await depo.findAll({
+                  where: {
+                    kode_plant: depos[i].kode_depo
+                  },
+                  include: [
+                    {
+                      model: activity,
+                      as: 'active',
+                      where: {
+                        [Op.and]: [
+                          { kode_plant: depos[i].kode_depo },
+                          { jenis_dokumen: { [Op.like]: `%${tipeValue}%` } }
+                        ],
+                        createdAt: {
+                          [Op.lt]: tomo,
+                          [Op.gt]: now
+                        }
+                      },
+                      include: [
+                        {
+                          model: Path,
+                          as: 'doc',
+                          limit: 50
+                        }
+                      ]
+                    },
+                    {
+                      model: documents,
+                      as: 'dokumen',
+                      where: {
+                        jenis_dokumen: { [Op.like]: `%${tipeValue}%` }
+                      }
+                    }
+                  ]
+                })
+                if (result.length > 0) {
+                  sa.push(result[0])
+                }
+              }
+              if (kasir.length > 0 || sa.length > 0) {
+                const dokumen = await documents.findAll({
+                  where: {
+                    jenis_dokumen: { [Op.like]: `%${tipeValue}%` }
+                  }
+                })
+                if (dokumen.length > 0) {
+                  const resu = []
+                  dokumen.map(item => {
+                    return (
+                      resu.push(item.nama_dokumen)
+                    )
+                  })
+                  const obj = {}
+                  const resultDokumen = []
+                  resu.forEach(item => {
+                    if (!obj[item]) { obj[item] = 0 }
+                    obj[item] += 1
+                  })
+                  for (const prop in obj) {
+                    if (obj[prop] >= 2 || obj[prop] === 1) {
+                      resultDokumen.push(prop)
+                    }
+                  }
+                  const temp = []
+                  for (let i = 0; i < sa.length; i++) {
+                    for (let j = 0; j < sa[i].active.length; j++) {
+                      if (tipeValue === 'monthly') {
+                        temp.push(`${sa[i].kode_plant} ${moment(sa[i].active[j].createdAt).format('YYYY/MM')}`)
+                      } else {
+                        temp.push(`${sa[i].kode_plant} ${moment(sa[i].active[j].createdAt).format('YYYY/MM/DD')}`)
+                      }
+                    }
+                  }
+                  const object = {}
+                  const result = []
+                  temp.forEach(item => {
+                    if (!object[item]) { object[item] = 0 }
+                    object[item] += 1
+                  })
+                  for (const prop in object) {
+                    if (object[prop] >= 2 || object[prop] === 1) {
+                      result.push(prop)
+                    }
+                  }
+                  const dataSa = []
+                  for (let i = 0; i < result.length; i++) {
+                    const kode = result[i].split(' ')
+                    let begin = new Date(moment(kode[1]).format('YYYY-MM-DD'))
+                    let last = new Date(moment(kode[1]).format('YYYY-MM-DD 24:00:00'))
+                    if (tipeValue === 'monthly') {
+                      begin = new Date(moment(timeFrom).startOf('month').format('YYYY-MM-DD'))
+                      last = new Date(moment(timeTo).endOf('month').format('YYYY-MM-DD'))
+                    }
+                    const hasil = await depo.findAll({
+                      where: {
+                        kode_plant: kode[0]
+                      },
+                      include: [
+                        {
+                          model: activity,
+                          as: 'active',
+                          where: {
+                            [Op.and]: [
+                              { kode_plant: kode[0] },
+                              { jenis_dokumen: { [Op.like]: `%${tipeValue}%` } }
+                            ],
+                            createdAt: {
+                              [Op.lt]: last,
+                              [Op.gt]: begin
+                            }
+                          },
+                          include: [
+                            {
+                              model: Path,
+                              as: 'doc',
+                              limit: 50
+                            }
+                          ]
+                        },
+                        {
+                          model: documents,
+                          as: 'dokumen',
+                          where: {
+                            jenis_dokumen: { [Op.like]: `%${tipeValue}%` }
+                          }
+                        }
+                      ]
+                    })
+                    if (hasil.length > 0) {
+                      dataSa.push(hasil[0])
+                    }
+                  }
+                  const saBody = []
+                  for (let i = 0; i < dataSa.length; i++) {
+                    const temp = []
+                    temp.push(i + 1)
+                    temp.push(dataSa[i].nama_grom)
+                    temp.push(dataSa[i].nama_pic_1)
+                    temp.push(dataSa[i].kode_plant)
+                    temp.push(dataSa[i].nama_depo)
+                    temp.push(dataSa[i].profit_center)
+                    temp.push(dataSa[i].kode_sap_1)
+                    temp.push(dataSa[i].status_depo)
+                    for (let d = 0; d < resultDokumen.length; d++) {
+                      if (dataSa[i].active[0] !== undefined && dataSa[i].active[1] !== undefined) {
+                        if (dataSa[i].active[0].doc.length > 0 || dataSa[i].active[1].doc.length > 0) {
+                          const iter = dataSa[i].active[1] !== undefined ? dataSa[i].active[1].doc.length : 0
+                          const collect = []
+                          for (let j = 0; j < dataSa[i].active[0].doc.length; j++) {
+                            if (dataSa[i].active[0].doc[j].dokumen === resultDokumen[d]) {
+                              dataSa[i].active[0].doc[j].status_dokumen === 3
+                                ? collect.push(moment(dataSa[i].active[0].doc[j].createdAt).format('LLL'))
+                                : dataSa[i].active[0].doc[j].status_dokumen === 5
+                                  ? collect.push('Telat  ' + `(${moment(dataSa[i].active[0].doc[j].createdAt).format('LLL')})`)
+                                  : collect.push('-')
+                            }
+                          }
+                          for (let x = 0; x < iter; x++) {
+                            if (dataSa[i].active[1].doc[x].dokumen === resultDokumen[d]) {
+                              dataSa[i].active[1].doc[x].status_dokumen === 3
+                                ? collect.push(moment(dataSa[i].active[1].doc[x].createdAt).format('LLL'))
+                                : dataSa[i].active[1].doc[x].status_dokumen === 5
+                                  ? collect.push('Telat  ' + `(${moment(dataSa[i].active[1].doc[x].createdAt).format('LLL')})`)
+                                  : collect.push('-')
+                            }
+                          }
+                          if (collect.length > 0) {
+                            temp.push(collect[0])
+                          } else {
+                            temp.push('-')
+                          }
+                        } else {
+                          temp.push('-')
+                        }
+                      } else if (dataSa[i].active[0] !== undefined) {
+                        const collect = []
+                        for (let j = 0; j < dataSa[i].active[0].doc.length; j++) {
+                          if (dataSa[i].active[0].doc[j].dokumen === resultDokumen[d]) {
+                            dataSa[i].active[0].doc[j].status_dokumen === 3
+                              ? collect.push(moment(dataSa[i].active[0].doc[j].createdAt).format('LLL'))
+                              : dataSa[i].active[0].doc[j].status_dokumen === 5
+                                ? collect.push('Telat  ' + `(${moment(dataSa[i].active[0].doc[j].createdAt).format('LLL')})`)
+                                : collect.push('-')
+                          }
+                        }
+                        if (collect.length > 0) {
+                          temp.push(collect[0])
+                        } else {
+                          temp.push('-')
+                        }
+                      }
+                    }
+                    temp.push(dataSa[i].dokumen.length)
+                    if (dataSa[i].active[1] !== undefined) {
+                      temp.push(dataSa[i].active[0].progress + dataSa[i].active[1].progress)
+                      temp.push(Math.round(((dataSa[i].active[0].progress + dataSa[i].active[1].progress) / dataSa[i].dokumen.length) * 100) + '%')
+                    } else {
+                      temp.push(dataSa[i].active[0].progress)
+                      temp.push(Math.round((dataSa[i].active[0].progress / dataSa[i].dokumen.length) * 100) + '%')
+                    }
+                    saBody.push(temp)
+                  }
+                  const header = first.concat(resultDokumen, last)
+                  const body = [header, ...saBody]
+                  const wb = xlsx.utils.book_new()
+                  const name = new Date().getTime().toString().concat('.xlsx')
+                  wb.Props = {
+                    Title: 'Report',
+                    Author: 'Team Accounting',
+                    CreatedDate: new Date()
+                  }
+                  const ws = xlsx.utils.aoa_to_sheet(body)
+                  wb.Sheets['Sheet 1'] = ws
+                  xlsx.utils.book_append_sheet(wb, ws, 'Results')
+                  await xlsx.writeFile(wb, name, { type: 'file' })
+                  vs.move(name, `assets/exports/${name}`, function (err) {
+                    if (err) {
+                      throw err
+                    }
+                    console.log('success')
+                  })
+                  return response(res, 'success', { link: `${APP_URL}/download/${name}` })
+                } else {
+                  return response(res, 'list dokumen', { findPic, sa, kasir })
+                }
+              }
+            } else {
+              return response(res, 'depo not found', {}, 404, false)
+            }
+          } else {
+            return response(res, 'failed to get report', {}, 404, false)
+          }
+        } else if (results.spv !== '') {
+          const findPic = await pic.findAll({
+            where: {
+              spv: { [Op.like]: `%${results.spv}%` }
+            }
+          })
+          if (findPic) {
+            const depos = []
+            findPic.map(x => {
+              return (
+                depos.push(x)
+              )
+            })
+            if (depos.length > 0) {
+              const sa = []
+              const kasir = []
+              for (let i = 0; i < depos.length; i++) {
+                const result = await depo.findAll({
+                  where: {
+                    kode_plant: depos[i].kode_depo
+                  },
+                  include: [
+                    {
+                      model: activity,
+                      as: 'active',
+                      where: {
+                        [Op.and]: [
+                          { kode_plant: depos[i].kode_depo },
+                          { jenis_dokumen: { [Op.like]: `%${tipeValue}%` } }
+                        ],
+                        createdAt: {
+                          [Op.lt]: tomo,
+                          [Op.gt]: now
+                        }
+                      },
+                      include: [
+                        {
+                          model: Path,
+                          as: 'doc',
+                          limit: 50
+                        }
+                      ]
+                    },
+                    {
+                      model: documents,
+                      as: 'dokumen',
+                      where: {
+                        jenis_dokumen: { [Op.like]: `%${tipeValue}%` }
+                      }
+                    }
+                  ]
+                })
+                if (result.length > 0) {
+                  sa.push(result[0])
+                }
+              }
+              if (kasir.length > 0 || sa.length > 0) {
+                const dokumen = await documents.findAll({
+                  where: {
+                    jenis_dokumen: { [Op.like]: `%${tipeValue}%` }
+                  }
+                })
+                if (dokumen.length > 0) {
+                  const resu = []
+                  dokumen.map(item => {
+                    return (
+                      resu.push(item.nama_dokumen)
+                    )
+                  })
+                  const obj = {}
+                  const resultDokumen = []
+                  resu.forEach(item => {
+                    if (!obj[item]) { obj[item] = 0 }
+                    obj[item] += 1
+                  })
+                  for (const prop in obj) {
+                    if (obj[prop] >= 2 || obj[prop] === 1) {
+                      resultDokumen.push(prop)
+                    }
+                  }
+                  const temp = []
+                  for (let i = 0; i < sa.length; i++) {
+                    for (let j = 0; j < sa[i].active.length; j++) {
+                      if (tipeValue === 'monthly') {
+                        temp.push(`${sa[i].kode_plant} ${moment(sa[i].active[j].createdAt).format('YYYY/MM')}`)
+                      } else {
+                        temp.push(`${sa[i].kode_plant} ${moment(sa[i].active[j].createdAt).format('YYYY/MM/DD')}`)
+                      }
+                    }
+                  }
+                  const object = {}
+                  const result = []
+                  temp.forEach(item => {
+                    if (!object[item]) { object[item] = 0 }
+                    object[item] += 1
+                  })
+                  for (const prop in object) {
+                    if (object[prop] >= 2 || object[prop] === 1) {
+                      result.push(prop)
+                    }
+                  }
+                  const dataSa = []
+                  for (let i = 0; i < result.length; i++) {
+                    const kode = result[i].split(' ')
+                    let begin = new Date(moment(kode[1]).format('YYYY-MM-DD'))
+                    let last = new Date(moment(kode[1]).format('YYYY-MM-DD 24:00:00'))
+                    if (tipeValue === 'monthly') {
+                      begin = new Date(moment(timeFrom).startOf('month').format('YYYY-MM-DD'))
+                      last = new Date(moment(timeTo).endOf('month').format('YYYY-MM-DD'))
+                    }
+                    const hasil = await depo.findAll({
+                      where: {
+                        kode_plant: kode[0]
+                      },
+                      include: [
+                        {
+                          model: activity,
+                          as: 'active',
+                          where: {
+                            [Op.and]: [
+                              { kode_plant: kode[0] },
+                              { jenis_dokumen: { [Op.like]: `%${tipeValue}%` } }
+                            ],
+                            createdAt: {
+                              [Op.lt]: last,
+                              [Op.gt]: begin
+                            }
+                          },
+                          include: [
+                            {
+                              model: Path,
+                              as: 'doc',
+                              limit: 50
+                            }
+                          ]
+                        },
+                        {
+                          model: documents,
+                          as: 'dokumen',
+                          where: {
+                            jenis_dokumen: { [Op.like]: `%${tipeValue}%` }
+                          }
+                        }
+                      ]
+                    })
+                    if (hasil.length > 0) {
+                      dataSa.push(hasil[0])
+                    }
+                  }
+                  const saBody = []
+                  for (let i = 0; i < dataSa.length; i++) {
+                    const temp = []
+                    temp.push(i + 1)
+                    temp.push(dataSa[i].nama_grom)
+                    temp.push(dataSa[i].nama_pic_1)
+                    temp.push(dataSa[i].kode_plant)
+                    temp.push(dataSa[i].nama_depo)
+                    temp.push(dataSa[i].profit_center)
+                    temp.push(dataSa[i].kode_sap_1)
+                    temp.push(dataSa[i].status_depo)
+                    for (let d = 0; d < resultDokumen.length; d++) {
+                      if (dataSa[i].active[0] !== undefined && dataSa[i].active[1] !== undefined) {
+                        if (dataSa[i].active[0].doc.length > 0 || dataSa[i].active[1].doc.length > 0) {
+                          const iter = dataSa[i].active[1] !== undefined ? dataSa[i].active[1].doc.length : 0
+                          const collect = []
+                          for (let j = 0; j < dataSa[i].active[0].doc.length; j++) {
+                            if (dataSa[i].active[0].doc[j].dokumen === resultDokumen[d]) {
+                              dataSa[i].active[0].doc[j].status_dokumen === 3
+                                ? collect.push(moment(dataSa[i].active[0].doc[j].createdAt).format('LLL'))
+                                : dataSa[i].active[0].doc[j].status_dokumen === 5
+                                  ? collect.push('Telat  ' + `(${moment(dataSa[i].active[0].doc[j].createdAt).format('LLL')})`)
+                                  : collect.push('-')
+                            }
+                          }
+                          for (let x = 0; x < iter; x++) {
+                            if (dataSa[i].active[1].doc[x].dokumen === resultDokumen[d]) {
+                              dataSa[i].active[1].doc[x].status_dokumen === 3
+                                ? collect.push(moment(dataSa[i].active[1].doc[x].createdAt).format('LLL'))
+                                : dataSa[i].active[1].doc[x].status_dokumen === 5
+                                  ? collect.push('Telat  ' + `(${moment(dataSa[i].active[1].doc[x].createdAt).format('LLL')})`)
+                                  : collect.push('-')
+                            }
+                          }
+                          if (collect.length > 0) {
+                            temp.push(collect[0])
+                          } else {
+                            temp.push('-')
+                          }
+                        } else {
+                          temp.push('-')
+                        }
+                      } else if (dataSa[i].active[0] !== undefined) {
+                        const collect = []
+                        for (let j = 0; j < dataSa[i].active[0].doc.length; j++) {
+                          if (dataSa[i].active[0].doc[j].dokumen === resultDokumen[d]) {
+                            dataSa[i].active[0].doc[j].status_dokumen === 3
+                              ? collect.push(moment(dataSa[i].active[0].doc[j].createdAt).format('LLL'))
+                              : dataSa[i].active[0].doc[j].status_dokumen === 5
+                                ? collect.push('Telat  ' + `(${moment(dataSa[i].active[0].doc[j].createdAt).format('LLL')})`)
+                                : collect.push('-')
+                          }
+                        }
+                        if (collect.length > 0) {
+                          temp.push(collect[0])
+                        } else {
+                          temp.push('-')
+                        }
+                      }
+                    }
+                    temp.push(dataSa[i].dokumen.length)
+                    if (dataSa[i].active[1] !== undefined) {
+                      temp.push(dataSa[i].active[0].progress + dataSa[i].active[1].progress)
+                      temp.push(Math.round(((dataSa[i].active[0].progress + dataSa[i].active[1].progress) / dataSa[i].dokumen.length) * 100) + '%')
+                    } else {
+                      temp.push(dataSa[i].active[0].progress)
+                      temp.push(Math.round((dataSa[i].active[0].progress / dataSa[i].dokumen.length) * 100) + '%')
+                    }
+                    saBody.push(temp)
+                  }
+                  const header = first.concat(resultDokumen, last)
+                  const body = [header, ...saBody]
+                  const wb = xlsx.utils.book_new()
+                  const name = new Date().getTime().toString().concat('.xlsx')
+                  wb.Props = {
+                    Title: 'Report',
+                    Author: 'Team Accounting',
+                    CreatedDate: new Date()
+                  }
+                  const ws = xlsx.utils.aoa_to_sheet(body)
+                  wb.Sheets['Sheet 1'] = ws
+                  xlsx.utils.book_append_sheet(wb, ws, 'Results')
+                  await xlsx.writeFile(wb, name, { type: 'file' })
+                  vs.move(name, `assets/exports/${name}`, function (err) {
+                    if (err) {
+                      throw err
+                    }
+                    console.log('success')
+                  })
+                  return response(res, 'success', { link: `${APP_URL}/download/${name}` })
+                } else {
+                  return response(res, 'list dokumen', { findPic, sa, kasir })
+                }
+              }
+            } else {
+              return response(res, 'depo not found', {}, 404, false)
             }
           } else {
             return response(res, 'failed to get report', {}, 404, false)

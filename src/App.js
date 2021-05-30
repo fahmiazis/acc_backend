@@ -58,7 +58,7 @@ app.use('/show', showRoute)
 
 const options = {
   method: 'GET',
-  url: 'http://35.219.64.61:7575/show/reminder'
+  url: 'http://192.168.35.163:7575/show/reminder'
 }
 
 cron.schedule('0 12,15 * * 1-5', () => {
