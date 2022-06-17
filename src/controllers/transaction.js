@@ -65,8 +65,8 @@ module.exports = {
       //   const id = req.user.id
       const level = req.user.level
       const kode = req.user.kode
-      let timeUser = new Date(moment().format('YYYY-MM-DD'))
-      let timeUserTomo = new Date(moment().add(1, 'days').format('YYYY-MM-DD'))
+      let timeUser = new Date(moment().format('YYYY-MM-DD 00:00'))
+      let timeUserTomo = new Date(moment().add(1, 'days').format('YYYY-MM-DD 00:00'))
       let now = timeValue === '' ? new Date(moment().format('YYYY-MM-DD')) : new Date(moment(timeValue).format('YYYY-MM-DD'))
       let tomo = timeValue === '' ? new Date(moment().add(1, 'days').format('YYYY-MM-DD')) : new Date(moment(timeValue).add(1, 'days').format('YYYY-MM-DD'))
       if (level === 4) {
@@ -113,7 +113,7 @@ module.exports = {
               }
             })
             if (cek.length > 0) {
-              return response(res, 'list dokumen', { results, pageInfo })
+              return response(res, 'list dokumen', { results, pageInfo, cek })
             } else {
               if (tipeValue === 'daily') {
                 const now = new Date(moment().startOf('month').format('YYYY-MM-DD'))
@@ -240,7 +240,7 @@ module.exports = {
               }
             })
             if (cek.length > 0) {
-              return response(res, 'list dokumen', { results, pageInfo })
+              return response(res, 'list dokumen', { results, pageInfo, cek })
             } else {
               if (tipeValue === 'daily') {
                 const now = new Date(moment().clone().startOf('month').format('YYYY-MM-DD'))
@@ -297,7 +297,7 @@ module.exports = {
                   }
                   const create = await activity.create(data)
                   if (create) {
-                    return response(res, 'list dokumen', { results, pageInfo })
+                    return response(res, 'list dokumen', { results, pageInfo, cek })
                   } else {
                     return response(res, 'failed to get dokumen', {}, 404, false)
                   }
@@ -313,7 +313,7 @@ module.exports = {
                 }
                 const create = await activity.create(data)
                 if (create) {
-                  return response(res, 'list dokumen', { results, pageInfo })
+                  return response(res, 'list dokumen', { results, pageInfo, cek })
                 } else {
                   return response(res, 'failed to get dokumen', {}, 404, false)
                 }

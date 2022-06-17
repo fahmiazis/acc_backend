@@ -33,23 +33,44 @@ module.exports = {
           if (result.length > 0) {
             return response(res, 'username already use', {}, 404, false)
           } else {
-            const result = await users.findAll({
-              where: {
-                [Op.and]: [
-                  { kode_depo: results.kode_depo },
-                  { user_level: results.user_level }
-                ]
-              }
-            })
-            if (result.length > 0) {
-              return response(res, 'kode depo and user level already use', {}, 404, false)
-            } else {
-              results.password = await bcrypt.hash(results.password, await bcrypt.genSalt())
-              const result = await users.create(results)
-              if (result) {
-                return response(res, 'Add User succesfully', { result })
+            if (results.user_level === '5') {
+              const result = await users.findAll({
+                where: {
+                  [Op.and]: [
+                    { kode_depo: results.kode_depo },
+                    { user_level: results.user_level }
+                  ]
+                }
+              })
+              if (result.length > 0) {
+                return response(res, 'kode depo and user level already use', {}, 404, false)
               } else {
-                return response(res, 'Fail to create user', {}, 400, false)
+                results.password = await bcrypt.hash(results.password, await bcrypt.genSalt())
+                const result = await users.create(results)
+                if (result) {
+                  return response(res, 'Add User succesfully', { result })
+                } else {
+                  return response(res, 'Fail to create user', {}, 400, false)
+                }
+              }
+            } else {
+              const result = await users.findAll({
+                where: {
+                  [Op.and]: [
+                    { username: results.username }
+                  ]
+                }
+              })
+              if (result.length > 0) {
+                return response(res, 'username already use', {}, 404, false)
+              } else {
+                results.password = await bcrypt.hash(results.password, await bcrypt.genSalt())
+                const result = await users.create(results)
+                if (result) {
+                  return response(res, 'Add User succesfully', { result })
+                } else {
+                  return response(res, 'Fail to create user', {}, 400, false)
+                }
               }
             }
           }
