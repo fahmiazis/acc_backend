@@ -8,9 +8,10 @@ const multer = require('multer')
 const fs = require('fs')
 const vs = require('fs-extra')
 const { APP_URL } = process.env
-const mailer = require('../helpers/mailer')
+// const mailer = require('../helpers/mailer')
 const moment = require('moment')
 const xlsx = require('xlsx')
+const wrapMail = require('../helpers/wrapMail')
 
 module.exports = {
   dashboard: async (req, res) => {
@@ -65,8 +66,8 @@ module.exports = {
       //   const id = req.user.id
       const level = req.user.level
       const kode = req.user.kode
-      let timeUser = new Date(moment().format('YYYY-MM-DD'))
-      let timeUserTomo = new Date(moment().add(1, 'days').format('YYYY-MM-DD'))
+      let timeUser = new Date(moment().format('YYYY-MM-DD 00:00'))
+      let timeUserTomo = new Date(moment().add(1, 'days').format('YYYY-MM-DD 00:00'))
       let now = timeValue === '' ? new Date(moment().format('YYYY-MM-DD')) : new Date(moment(timeValue).format('YYYY-MM-DD'))
       let tomo = timeValue === '' ? new Date(moment().add(1, 'days').format('YYYY-MM-DD')) : new Date(moment(timeValue).add(1, 'days').format('YYYY-MM-DD'))
       if (level === 4) {
@@ -113,7 +114,7 @@ module.exports = {
               }
             })
             if (cek.length > 0) {
-              return response(res, 'list dokumen', { results, pageInfo })
+              return response(res, 'list dokumen', { results, pageInfo, cek })
             } else {
               if (tipeValue === 'daily') {
                 const now = new Date(moment().startOf('month').format('YYYY-MM-DD'))
@@ -240,7 +241,7 @@ module.exports = {
               }
             })
             if (cek.length > 0) {
-              return response(res, 'list dokumen', { results, pageInfo })
+              return response(res, 'list dokumen', { results, pageInfo, cek })
             } else {
               if (tipeValue === 'daily') {
                 const now = new Date(moment().clone().startOf('month').format('YYYY-MM-DD'))
@@ -297,7 +298,7 @@ module.exports = {
                   }
                   const create = await activity.create(data)
                   if (create) {
-                    return response(res, 'list dokumen', { results, pageInfo })
+                    return response(res, 'list dokumen', { results, pageInfo, cek })
                   } else {
                     return response(res, 'failed to get dokumen', {}, 404, false)
                   }
@@ -313,7 +314,7 @@ module.exports = {
                 }
                 const create = await activity.create(data)
                 if (create) {
-                  return response(res, 'list dokumen', { results, pageInfo })
+                  return response(res, 'list dokumen', { results, pageInfo, cek })
                 } else {
                   return response(res, 'failed to get dokumen', {}, 404, false)
                 }
@@ -1040,7 +1041,7 @@ module.exports = {
             if (active.access === 'lock') {
               return response(res, 'Dokumen ini sudah di lock, hubungi spv untuk mengizinkan upload dokumen', {}, 404, false)
             } else {
-              const send = { path: dokumen }
+              const send = { path: dokumen, status_dokumen: 7 }
               await valid.update(send)
               return response(res, 'successfully upload dokumen', { send })
             }
@@ -1168,79 +1169,88 @@ module.exports = {
   approveDocument: async (req, res) => {
     // try {
     const level = req.user.level
-    const id = req.params.id
+    // const ids = req.params.id
     const idAct = req.params.idAct
+    const list = Object.values(req.body)
     if (level === 1 || level === 2 || level === 3) {
-      const result = await Path.findByPk(id)
-      let approve = { status_dokumen: 3 }
-      if (result) {
-        if (result.status_dokumen === 3 || result.status_dokumen === 5) {
-          const find = await notif.findOne({
-            where: {
-              [Op.or]: [
-                { upload: 'true' },
-                { reject: 'true' }
-              ],
-              pathId: id
-            }
-          })
-          if (find) {
-            await find.destroy()
-            return response(res, 'succes approve dokumen')
-          } else {
-            return response(res, 'succes approve dokumen')
-          }
-        } else if (result.status_dokumen === 4 || result.status_dokumen === 6) {
-          approve = { status_dokumen: 5 }
-          await result.update(approve)
-          const act = await activity.findByPk(idAct)
-          if (act) {
-            const send = { progress: act.progress + 1 }
-            await act.update(send)
+      const cek = []
+      for (let i = 0; i < list.length; i++) {
+        const result = await Path.findByPk(list[i])
+        let approve = { status_dokumen: 3 }
+        if (result) {
+          if (result.status_dokumen === 3 || result.status_dokumen === 5) {
             const find = await notif.findOne({
               where: {
                 [Op.or]: [
                   { upload: 'true' },
                   { reject: 'true' }
                 ],
-                pathId: id
+                pathId: list[i]
               }
             })
             if (find) {
               await find.destroy()
-              return response(res, 'succes approve dokumen')
+              cek.push(find)
             } else {
-              return response(res, 'succes approve dokumen')
+              cek.push(find)
+            }
+          } else if (result.status_dokumen === 4 || result.status_dokumen === 6) {
+            approve = { status_dokumen: 5 }
+            await result.update(approve)
+            const act = await activity.findByPk(idAct)
+            if (act) {
+              const send = { progress: act.progress + 1 }
+              await act.update(send)
+              const find = await notif.findOne({
+                where: {
+                  [Op.or]: [
+                    { upload: 'true' },
+                    { reject: 'true' }
+                  ],
+                  pathId: list[i]
+                }
+              })
+              if (find) {
+                await find.destroy()
+                cek.push(find)
+              } else {
+                cek.push(find)
+              }
+            } else {
+              cek.push()
             }
           } else {
-            return response(res, 'failed approve dokumen', {}, 404, false)
+            approve = { status_dokumen: 3 }
+            await result.update(approve)
+            const act = await activity.findByPk(idAct)
+            if (act) {
+              const send = { progress: act.progress + 1 }
+              await act.update(send)
+              const find = await notif.findOne({
+                where: {
+                  [Op.or]: [
+                    { upload: 'true' },
+                    { reject: 'true' }
+                  ],
+                  pathId: list[i]
+                }
+              })
+              if (find) {
+                await find.destroy()
+                cek.push(find)
+              } else {
+                cek.push(find)
+              }
+            } else {
+              cek.push()
+            }
           }
         } else {
-          approve = { status_dokumen: 3 }
-          await result.update(approve)
-          const act = await activity.findByPk(idAct)
-          if (act) {
-            const send = { progress: act.progress + 1 }
-            await act.update(send)
-            const find = await notif.findOne({
-              where: {
-                [Op.or]: [
-                  { upload: 'true' },
-                  { reject: 'true' }
-                ],
-                pathId: id
-              }
-            })
-            if (find) {
-              await find.destroy()
-              return response(res, 'succes approve dokumen')
-            } else {
-              return response(res, 'succes approve dokumen')
-            }
-          } else {
-            return response(res, 'failed approve dokumen', {}, 404, false)
-          }
+          cek.push()
         }
+      }
+      if (cek.length > 0) {
+        return response(res, 'succes approve dokumen')
       } else {
         return response(res, 'failed approve dokumen', {}, 404, false)
       }
@@ -1254,25 +1264,22 @@ module.exports = {
   rejectDocument: async (req, res) => {
     // try {
     const level = req.user.level
-    const id = req.params.id
+    // const ids = req.params.id
     const idAct = req.params.idAct
-    const schema = joi.object({
-      alasan: joi.string().required()
-    })
-    const { value: results, error } = schema.validate(req.body)
-    if (error) {
-      return response(res, 'Error', { error: error.message }, 404, false)
-    } else {
-      if (level === 1 || level === 2 || level === 3) {
-        const result = await Path.findByPk(id)
+    const list = Object.values(req.body)
+    const alasan = list[0]
+    if (level === 1 || level === 2 || level === 3) {
+      const cek = []
+      for (let i = 1; i < list.length; i++) {
+        const result = await Path.findByPk(list[i])
         let send = {
-          alasan: results.alasan,
+          alasan: alasan,
           status_dokumen: 0
         }
         if (result) {
           if (result.status_dokumen === 3) {
             send = {
-              alasan: results.alasan,
+              alasan: alasan,
               status_dokumen: 0
             }
             await result.update(send)
@@ -1286,7 +1293,7 @@ module.exports = {
                   reject: 'true',
                   upload: 'false',
                   activityId: idAct,
-                  pathId: id,
+                  pathId: list[i],
                   tipe: act.tipe
                 }
                 const find = await notif.findOne({
@@ -1295,25 +1302,25 @@ module.exports = {
                       { upload: 'true' },
                       { reject: 'true' }
                     ],
-                    pathId: id
+                    pathId: list[i]
                   }
                 })
                 if (find) {
                   await notif.create(data)
-                  return response(res, 'success reject dokumen')
+                  cek.push('success')
                 } else {
                   await notif.create(data)
-                  return response(res, 'success reject dokumen')
+                  cek.push('success')
                 }
               } else {
-                return response(res, 'failed reject dokumen', {}, 404, false)
+                cek.push()
               }
             } else {
-              return response(res, 'failed reject dokumen', {}, 404, false)
+              cek.push()
             }
           } else if (result.status_dokumen === 5) {
             send = {
-              alasan: results.alasan,
+              alasan: alasan,
               status_dokumen: 6
             }
             await result.update(send)
@@ -1327,7 +1334,7 @@ module.exports = {
                   reject: 'true',
                   upload: 'false',
                   activityId: idAct,
-                  pathId: id,
+                  pathId: list[i],
                   tipe: act.tipe
                 }
                 const find = await notif.findOne({
@@ -1336,27 +1343,27 @@ module.exports = {
                       { upload: 'true' },
                       { reject: 'true' }
                     ],
-                    pathId: id
+                    pathId: list[i]
                   }
                 })
                 if (find) {
                   await notif.create(data)
-                  return response(res, 'success reject dokumen')
+                  cek.push('success')
                 } else {
                   await notif.create(data)
-                  return response(res, 'success reject dokumen')
+                  cek.push('success')
                 }
               } else {
-                return response(res, 'failed reject dokumen', {}, 404, false)
+                cek.push()
               }
             } else {
-              return response(res, 'failed reject dokumen', {}, 404, false)
+              cek.push()
             }
           } else if (result.status_dokumen === 6 || result.status_dokumen === 0) {
-            return response(res, 'success reject dokumen')
+            cek.push('success')
           } else {
             send = {
-              alasan: results.alasan,
+              alasan: alasan,
               status_dokumen: 0
             }
             const update = await result.update(send)
@@ -1367,7 +1374,7 @@ module.exports = {
                 reject: 'true',
                 upload: 'false',
                 activityId: idAct,
-                pathId: id,
+                pathId: list[i],
                 tipe: act.tipe
               }
               const find = await notif.findOne({
@@ -1376,26 +1383,31 @@ module.exports = {
                     { upload: 'true' },
                     { reject: 'true' }
                   ],
-                  pathId: id
+                  pathId: list[i]
                 }
               })
               if (find) {
                 await notif.create(data)
-                return response(res, 'success reject dokumen')
+                cek.push('success')
               } else {
                 await notif.create(data)
-                return response(res, 'success reject dokumen')
+                cek.push('success')
               }
             } else {
-              return response(res, 'failed reject dokumen', {}, 404, false)
+              cek.push()
             }
           }
         } else {
-          return response(res, 'failed reject dokumen', {}, 404, false)
+          cek.push()
         }
-      } else {
-        return response(res, "you're not super administrator", {}, 404, false)
       }
+      if (cek.length > 0) {
+        return response(res, 'succes approve dokumen')
+      } else {
+        return response(res, 'failed reject dokumen', {}, 404, false)
+      }
+    } else {
+      return response(res, "you're not super administrator", {}, 404, false)
     }
     // } catch (error) {
     //   return response(res, error.message, {}, 500, false)
@@ -1424,9 +1436,10 @@ module.exports = {
   sendMail: async (req, res) => {
     try {
       const level = req.user.level
-      const id = req.params.id
+      // const id = req.params.id
+      const list = Object.values(req.body)
       if (level === 1 || level === 2 || level === 3) {
-        const dok = await Path.findByPk(id)
+        const dok = await Path.findByPk(list[0])
         if (dok) {
           const act = await activity.findByPk(dok.activityId)
           if (act) {
@@ -1445,51 +1458,398 @@ module.exports = {
                 }
               })
               if (find) {
+                let tableTd = ''
+                const cek = []
+                for (let i = 0; i < list.length; i++) {
+                  const findDoc = await Path.findByPk(list[i])
+                  if (findDoc) {
+                    const temp = findDoc.status_dokumen
+                    const status = temp === 0 || temp === 6 ? 'Reject' : temp === 3 || temp === 5 ? 'Approve' : temp === null ? 'Belum upload' : 'Sudah upload'
+                    const element = `
+                        <tr>
+                          <td>${i + 1}</td>
+                          <td>${find.nama_depo}</td>
+                          <td>${findDoc.dokumen}</td>
+                          <td>${act.jenis_dokumen}</td>
+                          <td>${moment(act.createdAt).subtract(1, 'day').format('DD-MM-YYYY')}</td>
+                          <td>${moment(findDoc.createdAt).format('DD-MM-YYYY')}</td>
+                          <td>${moment(findDoc.updatedAt).format('DD-MM-YYYY')}</td>
+                          <td>${status}</td>
+                          <td>${findDoc.alasan === null ? '' : findDoc.alasan}</td>
+                        </tr>`
+                    tableTd = tableTd + element
+                    cek.push(1)
+                  }
+                }
                 const mailOptions = {
-                  from: `${result.email_ho_pic}`,
-                  replyTo: `${result.email_ho_pic}`,
+                  from: 'noreply_acc@pinusmerahabadi.co.id',
+                  replyTo: 'noreply_acc@pinusmerahabadi.co.id',
+                  // to: 'insfopma@gmail.com',
+                  // cc: 'fahmiazis797@gmail.com',
                   to: `${result.email_aos}`,
                   cc: `${result.email_sa_kasir}, ${result.email_ho_pic}`,
-                  subject: 'Rejected Dokumen',
-                  html: `<body>
-                  <div style="margin-top: 20px; margin-bottom: 20px;">Dear Bapak/Ibu AOS</div>
-                  <div style="margin-bottom: 10px;">Report has been verified by Team Accounting with the following list:</div>
-                  <table style="border-collapse: collapse; margin-bottom: 20px;">
-                        <tr style="height: 75px;">
-                          <th style="border: 1px solid black; background-color: lightgray; width: 20px; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, 'Open Sans', 'Helvetica Neue', sans-serif;">No</th>
-                          <th style="border: 1px solid black; background-color: lightgray; width: 100px; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, 'Open Sans', 'Helvetica Neue', sans-serif;">Nama Area</th>
-                          <th style="border: 1px solid black; background-color: lightgray; width: 100px; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, 'Open Sans', 'Helvetica Neue', sans-serif;">Nama File</th>
-                          <th style="border: 1px solid black; background-color: lightgray; width: 100px; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, 'Open Sans', 'Helvetica Neue', sans-serif;">Jenis Report</th>
-                          <th style="border: 1px solid black; background-color: lightgray; width: 100px; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, 'Open Sans', 'Helvetica Neue', sans-serif;">Tanggal Report</th>
-                          <th style="border: 1px solid black; background-color: lightgray; width: 100px; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, 'Open Sans', 'Helvetica Neue', sans-serif;">Tanggal Upload</th>
-                          <th style="border: 1px solid black; background-color: lightgray; width: 100px; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, 'Open Sans', 'Helvetica Neue', sans-serif;">Tanggal Verifikasi</th>
-                          <th style="border: 1px solid black; background-color: lightgray; width: 100px; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, 'Open Sans', 'Helvetica Neue', sans-serif;">Status</th>
-                          <th style="border: 1px solid black; background-color: lightgray; width: 100px; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, 'Open Sans', 'Helvetica Neue', sans-serif;">Alasan</th>
-                        </tr>
-                        <tr style="height: 50px;">
-                          <th scope="row" style='border: 1px solid black;'>1</th>
-                          <td style='border: 1px solid black;'>${find.nama_depo}</td>
-                          <td style='border: 1px solid black;'>${dok.dokumen}</td>
-                          <td style='border: 1px solid black;'>${act.jenis_dokumen}</td>
-                          <td style='border: 1px solid black;'>${moment(act.createdAt).subtract(1, 'day').format('DD-MM-YYYY')}</td>
-                          <td style='border: 1px solid black;'>${moment(dok.createdAt).format('DD-MM-YYYY')}</td>
-                          <td style='border: 1px solid black;'>${moment(dok.updatedAt).format('DD-MM-YYYY')}</td>
-                          <td style='border: 1px solid black;'>Rejected</td>
-                          <td style='border: 1px solid black;'>${dok.alasan}</td>
-                        </tr>
-                  </table>
-                  <a href="http://trial.pinusmerahabadi.co.id:3000/">With the following link</a>
-                  <div style="margin-top: 20px;">Thank you.</div>
-              </body>
+                  subject: 'Verifikasi Dokumen Report',
+                  html: `<head>
+                    <style type="text/css">
+                      body {
+                          display: flexbox;
+                          flex-direction: column;
+                      }
+                      .tittle {
+                          font-size: 15px;
+                      }
+                      .mar {
+                          margin-bottom: 20px;
+                      }
+                      .mar1 {
+                          margin-bottom: 10px;
+                      }
+                      .foot {
+                          margin-top: 20px;
+                          margin-bottom: 10px;
+                      }
+                      .foot1 {
+                          margin-bottom: 50px;
+                      }
+                      .position {
+                          display: flexbox;
+                          flex-direction: row;
+                          justify-content: left;
+                          margin-top: 10px;
+                      }
+                      table {
+                          font-family: "Lucida Sans Unicode", "Lucida Grande", "Segoe Ui";
+                          font-size: 12px;
+                      }
+                      .demo-table {
+                          border-collapse: collapse;
+                          font-size: 13px;
+                      }
+                      .demo-table th, 
+                      .demo-table td {
+                          border-bottom: 1px solid #e1edff;
+                          border-left: 1px solid #e1edff;
+                          padding: 7px 17px;
+                      }
+                      .demo-table th, 
+                      .demo-table td:last-child {
+                          border-right: 1px solid #e1edff;
+                      }
+                      .demo-table td:first-child {
+                          border-top: 1px solid #e1edff;
+                      }
+                      .demo-table td:last-child{
+                          border-bottom: 0;
+                      }
+                      caption {
+                          caption-side: top;
+                          margin-bottom: 10px;
+                      }
+                      
+                      /* Table Header */
+                      .demo-table thead th {
+                          background-color: #508abb;
+                          color: #FFFFFF;
+                          border-color: #6ea1cc !important;
+                          text-transform: uppercase;
+                      }
+                      
+                      /* Table Body */
+                      .demo-table tbody td {
+                          color: #353535;
+                      }
+                      
+                      .demo-table tbody tr:nth-child(odd) td {
+                          background-color: #f4fbff;
+                      }
+                      .demo-table tbody tr:hover th,
+                      .demo-table tbody tr:hover td {
+                          background-color: #ffffa2;
+                          border-color: #ffff0f;
+                          transition: all .2s;
+                      }
+                      .martit2 {
+                          font-size: 15px;
+                          margin-top: 20px;
+                          margin-bottom: 20px;
+                          font-weight: bold;
+                      }
+                      .martit {
+                          font-size: 15px;
+                          margin-bottom: 20px;
+                          font-weight: bold;
+                      }
+                      .martit3 {
+                          font-size: 15px;
+                          margin-top: 10px;
+                      }
+                    </style>
+                  </head>
+                  <body>
+                      <div class="martit">
+                          Dear Bapak/Ibu AOS,
+                      </div>
+                      <div class="tittle mar1">
+                          <div>Laporan telah diverifikasi oleh Tim Accounting dengan daftar berikut:</div>
+                      </div>
+                      <div class="position">
+                          <table class="demo-table">
+                              <thead>
+                                  <tr>
+                                      <th>No</th>
+                                      <th>Nama Area</th>
+                                      <th>Nama File</th>
+                                      <th>Jenis Report</th>
+                                      <th>Tanggal Report</th>
+                                      <th>Tanggal Upload</th>
+                                      <th>Tanggal Verifikasi</th>
+                                      <th>Status</th>
+                                      <th>Alasan</th>
+                                  </tr>
+                              </thead>
+                              <tbody>
+                                ${tableTd}
+                              </tbody>
+                          </table>
+                      </div>
+                      <div class="martit3">Mohon untuk perbaiki dan kirim ulang dokumen dengan status reject</div>
+                      <a href="http://accounting.pinusmerahabadi.co.id/">Klik link berikut untuk akses web accounting</a>
+                      <div class="tittle foot">
+                          Terima kasih,
+                      </div>
+                      <div class="tittle foot1">
+                          Regards,
+                      </div>
+                      <div class="tittle">
+                          Team Accounting
+                      </div>
+                  </body>
                   `
                 }
-                mailer.sendMail(mailOptions, (error, result) => {
-                  if (error) {
-                    return response(res, 'failed to send email', { error: error }, 401, false)
-                  } else if (result) {
-                    return response(res, 'success send email', { result: result })
+                const sendEmail = await wrapMail.wrapedSendMail(mailOptions)
+                if (sendEmail) {
+                  return response(res, 'success send email')
+                } else {
+                  return response(res, 'failed to send email', {}, 401, false)
+                }
+              } else {
+                return response(res, 'failed to send email', {}, 401, false)
+              }
+            } else {
+              return response(res, 'kode plant not found', {}, 401, false)
+            }
+          } else {
+            return response(res, 'failed to send email', { }, 401, false)
+          }
+        } else {
+          return response(res, 'failed to send email', { }, 401, false)
+        }
+      } else {
+        return response(res, "You're not super administrator", {}, 404, false)
+      }
+    } catch (error) {
+      return response(res, error.message, {}, 500, false)
+    }
+  },
+  sendMailArea: async (req, res) => {
+    try {
+      const level = req.user.level
+      // const id = req.params.id
+      const list = Object.values(req.body)
+      if (level === 4 || level === 5) {
+        const dok = await Path.findByPk(list[0])
+        if (dok) {
+          const act = await activity.findByPk(dok.activityId)
+          if (act) {
+            const result = await email.findOne({
+              where: {
+                [Op.and]: [
+                  { kode_plant: act.kode_plant },
+                  { tipe: act.tipe }
+                ]
+              }
+            })
+            if (result) {
+              const find = await depo.findOne({
+                where: {
+                  kode_plant: result.kode_plant
+                }
+              })
+              if (find) {
+                let tableTd = ''
+                const cek = []
+                for (let i = 0; i < list.length; i++) {
+                  const findDoc = await Path.findByPk(list[i])
+                  if (findDoc) {
+                    const temp = findDoc.status_dokumen
+                    const status = temp === 0 || temp === 6 ? 'Reject' : temp === 3 || temp === 5 ? 'Approve' : temp === null ? 'Belum upload' : 'Sudah upload'
+                    const element = `
+                        <tr>
+                          <td>${i + 1}</td>
+                          <td>${find.nama_depo}</td>
+                          <td>${findDoc.dokumen}</td>
+                          <td>${act.jenis_dokumen}</td>
+                          <td>${moment(act.createdAt).subtract(1, 'day').format('DD-MM-YYYY')}</td>
+                          <td>${moment(findDoc.createdAt).format('DD-MM-YYYY')}</td>
+                          <td>${moment(findDoc.updatedAt).format('DD-MM-YYYY')}</td>
+                          <td>${status}</td>
+                          <td>${findDoc.alasan === null ? '' : findDoc.alasan}</td>
+                        </tr>`
+                    tableTd = tableTd + element
+                    cek.push(1)
                   }
-                })
+                }
+                const mailOptions = {
+                  from: 'noreply_acc@pinusmerahabadi.co.id',
+                  replyTo: 'noreply_acc@pinusmerahabadi.co.id',
+                  to: `${result.email_ho_pic}`,
+                  cc: `${result.email_sa_kasir}, ${result.email_aos}`,
+                  // to: 'insfopma@gmail.com',
+                  // cc: 'fahmiazis797@gmail.com',
+                  subject: 'Info Dokumen Report',
+                  html: `<head>
+                    <style type="text/css">
+                      body {
+                          display: flexbox;
+                          flex-direction: column;
+                      }
+                      .tittle {
+                          font-size: 15px;
+                      }
+                      .mar {
+                          margin-bottom: 20px;
+                      }
+                      .mar1 {
+                          margin-bottom: 10px;
+                      }
+                      .foot {
+                          margin-top: 20px;
+                          margin-bottom: 10px;
+                      }
+                      .foot1 {
+                          margin-bottom: 50px;
+                      }
+                      .position {
+                          display: flexbox;
+                          flex-direction: row;
+                          justify-content: left;
+                          margin-top: 10px;
+                      }
+                      table {
+                          font-family: "Lucida Sans Unicode", "Lucida Grande", "Segoe Ui";
+                          font-size: 12px;
+                      }
+                      .demo-table {
+                          border-collapse: collapse;
+                          font-size: 13px;
+                      }
+                      .demo-table th, 
+                      .demo-table td {
+                          border-bottom: 1px solid #e1edff;
+                          border-left: 1px solid #e1edff;
+                          padding: 7px 17px;
+                      }
+                      .demo-table th, 
+                      .demo-table td:last-child {
+                          border-right: 1px solid #e1edff;
+                      }
+                      .demo-table td:first-child {
+                          border-top: 1px solid #e1edff;
+                      }
+                      .demo-table td:last-child{
+                          border-bottom: 0;
+                      }
+                      caption {
+                          caption-side: top;
+                          margin-bottom: 10px;
+                      }
+                      
+                      /* Table Header */
+                      .demo-table thead th {
+                          background-color: #508abb;
+                          color: #FFFFFF;
+                          border-color: #6ea1cc !important;
+                          text-transform: uppercase;
+                      }
+                      
+                      /* Table Body */
+                      .demo-table tbody td {
+                          color: #353535;
+                      }
+                      
+                      .demo-table tbody tr:nth-child(odd) td {
+                          background-color: #f4fbff;
+                      }
+                      .demo-table tbody tr:hover th,
+                      .demo-table tbody tr:hover td {
+                          background-color: #ffffa2;
+                          border-color: #ffff0f;
+                          transition: all .2s;
+                      }
+                      .martit2 {
+                          font-size: 15px;
+                          margin-top: 20px;
+                          margin-bottom: 20px;
+                          font-weight: bold;
+                      }
+                      .martit {
+                          font-size: 15px;
+                          margin-bottom: 20px;
+                          font-weight: bold;
+                      }
+                      .martit3 {
+                          font-size: 15px;
+                          margin-top: 10px;
+                      }
+                    </style>
+                  </head>
+                  <body>
+                      <div class="martit">
+                          Dear Bapak/Ibu Team accounting,
+                      </div>
+                      <div class="tittle mar1">
+                          <div>Laporan telah diverifikasi oleh Tim Accounting dengan daftar berikut:</div>
+                      </div>
+                      <div class="position">
+                          <table class="demo-table">
+                              <thead>
+                                  <tr>
+                                      <th>No</th>
+                                      <th>Nama Area</th>
+                                      <th>Nama File</th>
+                                      <th>Jenis Report</th>
+                                      <th>Tanggal Report</th>
+                                      <th>Tanggal Upload</th>
+                                      <th>Tanggal Verifikasi</th>
+                                      <th>Status</th>
+                                      <th>Alasan</th>
+                                  </tr>
+                              </thead>
+                              <tbody>
+                                ${tableTd}
+                              </tbody>
+                          </table>
+                      </div>
+                      <div class="martit3">Mohon untuk perbaiki dan kirim ulang dokumen dengan status reject</div>
+                      <a href="http://accounting.pinusmerahabadi.co.id/">Klik link berikut untuk akses web accounting</a>
+                      <div class="tittle foot">
+                          Terima kasih,
+                      </div>
+                      <div class="tittle foot1">
+                          Regards,
+                      </div>
+                      <div class="tittle">
+                          Team Accounting
+                      </div>
+                  </body>
+                  `
+                }
+                const sendEmail = await wrapMail.wrapedSendMail(mailOptions)
+                if (sendEmail) {
+                  return response(res, 'success send email')
+                } else {
+                  return response(res, 'failed to send email', {}, 401, false)
+                }
               } else {
                 return response(res, 'failed to send email', {}, 401, false)
               }

@@ -224,12 +224,12 @@ module.exports = {
           }
           if (count.length === cek.length) {
             const plant = []
-            const pic = []
+            const pic1 = []
             const kode = []
             for (let i = 1; i < rows.length; i++) {
               const a = rows[i]
               plant.push(`Nama PIC ${a[0]} dan Kode Depo ${a[3]}`)
-              pic.push(`${a[0]}`)
+              pic1.push(`${a[0]}`)
               kode.push(`${a[3]}`)
             }
             const object = {}
@@ -249,57 +249,56 @@ module.exports = {
             if (result.length > 0) {
               return response(res, 'there is duplication in your file master', { result }, 404, false)
             } else {
-              const arr = []
-              for (let i = 0; i < rows.length - 1; i++) {
-                const select = await sequelize.query(`SELECT pic, kode_depo from pics WHERE pic='${pic[i]}' AND kode_depo='${kode[i]}'`, {
-                  type: QueryTypes.SELECT
-                })
-                await sequelize.query(`DELETE from pics WHERE pic='${pic[i]}' AND kode_depo='${kode[i]}'`, {
-                  type: QueryTypes.DELETE
-                })
-                if (select.length > 0) {
-                  arr.push(select[0])
+              const findDoc = await pic.findAll()
+              if (findDoc.length > 0 || findDoc.length === 0) {
+                const arr = []
+                for (let i = 0; i < findDoc.length; i++) {
+                  const findId = await pic.findByPk(findDoc[i].id)
+                  if (findId) {
+                    await findId.destroy()
+                    arr.push(findId)
+                  }
                 }
-              }
-              if (arr.length > 0) {
-                rows.shift()
-                const result = await sequelize.query(`INSERT INTO pics (pic, spv, divisi, kode_depo, nama_depo) VALUES ${rows.map(a => '(?)').join(',')}`,
-                  {
-                    replacements: rows,
-                    type: QueryTypes.INSERT
-                  })
-                if (result) {
-                  fs.unlink(dokumen, function (err) {
-                    if (err) throw err
-                    console.log('success')
-                  })
-                  return response(res, 'successfully upload file master')
+                if (arr.length > 0) {
+                  rows.shift()
+                  const result = await sequelize.query(`INSERT INTO pics (pic, spv, divisi, kode_depo, nama_depo) VALUES ${rows.map(a => '(?)').join(',')}`,
+                    {
+                      replacements: rows,
+                      type: QueryTypes.INSERT
+                    })
+                  if (result) {
+                    fs.unlink(dokumen, function (err) {
+                      if (err) throw err
+                      console.log('success')
+                    })
+                    return response(res, 'successfully upload file master')
+                  } else {
+                    fs.unlink(dokumen, function (err) {
+                      if (err) throw err
+                      console.log('success')
+                    })
+                    return response(res, 'failed to upload file', {}, 404, false)
+                  }
                 } else {
-                  fs.unlink(dokumen, function (err) {
-                    if (err) throw err
-                    console.log('success')
-                  })
-                  return response(res, 'failed to upload file', {}, 404, false)
-                }
-              } else {
-                rows.shift()
-                const result = await sequelize.query(`INSERT INTO pics (pic, spv, divisi, kode_depo, nama_depo) VALUES ${rows.map(a => '(?)').join(',')}`,
-                  {
-                    replacements: rows,
-                    type: QueryTypes.INSERT
-                  })
-                if (result) {
-                  fs.unlink(dokumen, function (err) {
-                    if (err) throw err
-                    console.log('success')
-                  })
-                  return response(res, 'successfully upload file master')
-                } else {
-                  fs.unlink(dokumen, function (err) {
-                    if (err) throw err
-                    console.log('success')
-                  })
-                  return response(res, 'failed to upload file', {}, 404, false)
+                  rows.shift()
+                  const result = await sequelize.query(`INSERT INTO pics (pic, spv, divisi, kode_depo, nama_depo) VALUES ${rows.map(a => '(?)').join(',')}`,
+                    {
+                      replacements: rows,
+                      type: QueryTypes.INSERT
+                    })
+                  if (result) {
+                    fs.unlink(dokumen, function (err) {
+                      if (err) throw err
+                      console.log('success')
+                    })
+                    return response(res, 'successfully upload file master')
+                  } else {
+                    fs.unlink(dokumen, function (err) {
+                      if (err) throw err
+                      console.log('success')
+                    })
+                    return response(res, 'failed to upload file', {}, 404, false)
+                  }
                 }
               }
             }

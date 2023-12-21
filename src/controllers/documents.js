@@ -462,57 +462,56 @@ module.exports = {
             if (result.length > 0) {
               return response(res, 'there is duplication in your file master', { result }, 404, false)
             } else {
-              const arr = []
-              for (let i = 0; i < rows.length - 1; i++) {
-                const select = await sequelize.query(`SELECT nama_dokumen, status_depo from documents WHERE nama_dokumen='${kode[i]}' AND status_depo='${status[i]}'`, {
-                  type: QueryTypes.SELECT
-                })
-                await sequelize.query(`DELETE from documents WHERE nama_dokumen='${kode[i]}' AND status_depo='${status[i]}'`, {
-                  type: QueryTypes.DELETE
-                })
-                if (select.length > 0) {
-                  arr.push(select[0])
+              const findDoc = await documents.findAll()
+              if (findDoc.length > 0 || findDoc.length === 0) {
+                const arr = []
+                for (let i = 0; i < findDoc.length; i++) {
+                  const findId = await documents.findByPk(findDoc[i].id)
+                  if (findId) {
+                    await findId.destroy()
+                    arr.push(findId)
+                  }
                 }
-              }
-              if (arr.length > 0) {
-                rows.shift()
-                const result = await sequelize.query(`INSERT INTO documents (nama_dokumen, jenis_dokumen, divisi, status_depo, uploadedBy) VALUES ${rows.map(a => '(?)').join(',')}`,
-                  {
-                    replacements: rows,
-                    type: QueryTypes.INSERT
-                  })
-                if (result) {
-                  fs.unlink(dokumen, function (err) {
-                    if (err) throw err
-                    console.log('success')
-                  })
-                  return response(res, 'successfully upload file master')
+                if (arr.length > 0) {
+                  rows.shift()
+                  const result = await sequelize.query(`INSERT INTO documents (nama_dokumen, jenis_dokumen, divisi, status_depo, uploadedBy) VALUES ${rows.map(a => '(?)').join(',')}`,
+                    {
+                      replacements: rows,
+                      type: QueryTypes.INSERT
+                    })
+                  if (result) {
+                    fs.unlink(dokumen, function (err) {
+                      if (err) throw err
+                      console.log('success')
+                    })
+                    return response(res, 'successfully upload file master')
+                  } else {
+                    fs.unlink(dokumen, function (err) {
+                      if (err) throw err
+                      console.log('success')
+                    })
+                    return response(res, 'failed to upload file', {}, 404, false)
+                  }
                 } else {
-                  fs.unlink(dokumen, function (err) {
-                    if (err) throw err
-                    console.log('success')
-                  })
-                  return response(res, 'failed to upload file', {}, 404, false)
-                }
-              } else {
-                rows.shift()
-                const result = await sequelize.query(`INSERT INTO documents (nama_dokumen, jenis_dokumen, divisi, status_depo, uploadedBy) VALUES ${rows.map(a => '(?)').join(',')}`,
-                  {
-                    replacements: rows,
-                    type: QueryTypes.INSERT
-                  })
-                if (result) {
-                  fs.unlink(dokumen, function (err) {
-                    if (err) throw err
-                    console.log('success')
-                  })
-                  return response(res, 'successfully upload file master')
-                } else {
-                  fs.unlink(dokumen, function (err) {
-                    if (err) throw err
-                    console.log('success')
-                  })
-                  return response(res, 'failed to upload file', {}, 404, false)
+                  rows.shift()
+                  const result = await sequelize.query(`INSERT INTO documents (nama_dokumen, jenis_dokumen, divisi, status_depo, uploadedBy) VALUES ${rows.map(a => '(?)').join(',')}`,
+                    {
+                      replacements: rows,
+                      type: QueryTypes.INSERT
+                    })
+                  if (result) {
+                    fs.unlink(dokumen, function (err) {
+                      if (err) throw err
+                      console.log('success')
+                    })
+                    return response(res, 'successfully upload file master')
+                  } else {
+                    fs.unlink(dokumen, function (err) {
+                      if (err) throw err
+                      console.log('success')
+                    })
+                    return response(res, 'failed to upload file', {}, 404, false)
+                  }
                 }
               }
             }

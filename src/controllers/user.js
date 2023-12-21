@@ -13,7 +13,7 @@ const vs = require('fs-extra')
 const { APP_URL } = process.env
 
 module.exports = {
-  addUser: async (req, res) => {
+addUser: async (req, res) => {
     try {
       const level = req.user.level
       const schema = joi.object({
@@ -33,23 +33,42 @@ module.exports = {
           if (result.length > 0) {
             return response(res, 'username already use', {}, 404, false)
           } else {
-            const result = await users.findAll({
-              where: {
-                [Op.and]: [
-                  { kode_depo: results.kode_depo },
-                  { user_level: results.user_level }
-                ]
-              }
-            })
-            if (result.length > 0) {
-              return response(res, 'kode depo and user level already use', {}, 404, false)
-            } else {
-              results.password = await bcrypt.hash(results.password, await bcrypt.genSalt())
-              const result = await users.create(results)
-              if (result) {
-                return response(res, 'Add User succesfully', { result })
+            if (results.user_level === '5') {
+              const result = await users.findAll({
+                where: {
+                  [Op.and]: [
+                    { kode_depo: results.kode_depo },
+                    { user_level: results.user_level }
+                  ]
+                }
+              })
+              if (result.length > 0) {
+                return response(res, 'kode depo and user level already use', {}, 404, false)
               } else {
-                return response(res, 'Fail to create user', {}, 400, false)
+                results.password = await bcrypt.hash(results.password, await bcrypt.genSalt())
+                const result = await users.create(results)
+                if (result) {
+                  return response(res, 'Add User succesfully', { result })
+                } else {
+                  return response(res, 'Fail to create user', {}, 400, false)
+                }
+              }
+            } else {
+              const result = await users.findAll({
+                where: { 
+                   username: results.username
+                }
+              })
+              if (result.length > 0) {
+                return response(res, 'username already use', {}, 404, false)
+              } else {
+                results.password = await bcrypt.hash(results.password, await bcrypt.genSalt())
+                const result = await users.create(results)
+                if (result) {
+                  return response(res, 'Add User succesfully', { result })
+                } else {
+                  return response(res, 'Fail to create user', {}, 400, false)
+                }
               }
             }
           }
@@ -243,166 +262,176 @@ module.exports = {
     }
   },
   uploadMasterUser: async (req, res) => {
-    const level = req.user.level
-    if (level === 1) {
-      uploadMaster(req, res, async function (err) {
-        try {
-          if (err instanceof multer.MulterError) {
-            if (err.code === 'LIMIT_UNEXPECTED_FILE' && req.files.length === 0) {
-              console.log(err.code === 'LIMIT_UNEXPECTED_FILE' && req.files.length > 0)
-              return response(res, 'fieldname doesnt match', {}, 500, false)
-            }
-            return response(res, err.message, {}, 500, false)
-          } else if (err) {
-            return response(res, err.message, {}, 401, false)
-          }
-          const dokumen = `assets/masters/${req.files[0].filename}`
-          const rows = await readXlsxFile(dokumen)
-          const count = []
-          const cek = ['User Name', 'Password', 'Kode Depo', 'Nama Depo', 'User Level']
-          const valid = rows[0]
-          for (let i = 0; i < cek.length; i++) {
-            if (valid[i] === cek[i]) {
-              count.push(1)
-            }
-          }
-          if (count.length === cek.length) {
-            const plant = []
-            const user = []
-            const cek = []
-            for (let i = 1; i < rows.length; i++) {
-              const a = rows[i]
-              if (a[2] !== '') {
-                plant.push(`Kode depo ${a[2]} dan  User level ${a[4]}`)
+    try {
+      const level = req.user.level
+      if (level === 1) {
+        uploadMaster(req, res, async function (err) {
+          try {
+            if (err instanceof multer.MulterError) {
+              if (err.code === 'LIMIT_UNEXPECTED_FILE' && req.files.length === 0) {
+                console.log(err.code === 'LIMIT_UNEXPECTED_FILE' && req.files.length > 0)
+                return response(res, 'fieldname doesnt match', {}, 500, false)
               }
-              user.push(`User Name ${a[0]}`)
-              cek.push(`${a[0]}`)
+              return response(res, err.message, {}, 500, false)
+            } else if (err) {
+              return response(res, err.message, {}, 401, false)
             }
-            const object = {}
-            const result = []
-            const obj = {}
-
-            user.forEach(item => {
-              if (!obj[item]) { obj[item] = 0 }
-              obj[item] += 1
-            })
-
-            for (const prop in obj) {
-              if (obj[prop] >= 2) {
-                result.push(prop)
+            const dokumen = `assets/masters/${req.files[0].filename}`
+            const rows = await readXlsxFile(dokumen)
+            const count = []
+            const cek = ['User Name', 'Password', 'Kode Depo', 'Nama Depo', 'User Level']
+            const valid = rows[0]
+            for (let i = 0; i < cek.length; i++) {
+              if (valid[i] === cek[i]) {
+                count.push(1)
               }
             }
-
-            plant.forEach(item => {
-              if (!object[item]) { object[item] = 0 }
-              object[item] += 1
-            })
-
-            for (const prop in object) {
-              if (object[prop] >= 2) {
-                result.push(prop)
-              }
-            }
-            if (result.length > 0) {
-              return response(res, 'there is duplication in your file master', { result }, 404, false)
-            } else {
-              const arr = []
-              for (let i = 0; i < rows.length - 1; i++) {
-                const select = await sequelize.query(`SELECT username from users WHERE username='${cek[i]}'`, {
-                  type: QueryTypes.SELECT
-                })
-                await sequelize.query(`DELETE from users WHERE username='${cek[i]}'`, {
-                  type: QueryTypes.DELETE
-                })
-                if (select.length > 0) {
-                  arr.push(select[0])
-                }
-              }
-              if (arr.length > 0) {
-                rows.shift()
-                const create = []
-                for (let i = 0; i < rows.length; i++) {
-                  const noun = []
-                  const process = rows[i]
-                  for (let j = 0; j < process.length; j++) {
-                    if (j === 1) {
-                      let str = process[j]
-                      str = await bcrypt.hash(str, await bcrypt.genSalt())
-                      noun.push(str)
-                    } else {
-                      noun.push(process[j])
-                    }
-                  }
-                  create.push(noun)
-                }
-                const result = await sequelize.query(`INSERT INTO users (username, password, kode_depo, nama_depo, user_level) VALUES ${create.map(a => '(?)').join(',')}`,
-                  {
-                    replacements: create,
-                    type: QueryTypes.INSERT
-                  })
-                if (result) {
-                  fs.unlink(dokumen, function (err) {
-                    if (err) throw err
-                    console.log('success')
-                  })
-                  return response(res, 'successfully upload file master')
+            if (count.length === cek.length) {
+              const plant = []
+              const user = []
+              const cek = []
+              for (let i = 1; i < rows.length; i++) {
+                const a = rows[i]
+                if (a[2] !== '' || a[2] !== null) {
+                  console.log('aabb')
                 } else {
-                  fs.unlink(dokumen, function (err) {
-                    if (err) throw err
-                    console.log('success')
-                  })
-                  return response(res, 'failed to upload file', {}, 404, false)
+                  plant.push(`Kode depo ${a[2]} dan  User level ${a[4]}`)
                 }
+                user.push(`User Name ${a[0]}`)
+                cek.push(`${a[0]}`)
+              }
+              const object = {}
+              const result = []
+              const obj = {}
+
+              user.forEach(item => {
+                if (!obj[item]) { obj[item] = 0 }
+                obj[item] += 1
+              })
+
+              for (const prop in obj) {
+                if (obj[prop] >= 2) {
+                  result.push(prop)
+                }
+              }
+
+              plant.forEach(item => {
+                if (!object[item]) { object[item] = 0 }
+                object[item] += 1
+              })
+
+              for (const prop in object) {
+                if (object[prop] >= 2) {
+                  result.push(prop)
+                }
+              }
+              if (result.length > 0) {
+                return response(res, 'there is duplication in your file master', { result }, 404, false)
               } else {
-                rows.shift()
-                const create = []
-                for (let i = 0; i < rows.length; i++) {
-                  const noun = []
-                  const process = rows[i]
-                  for (let j = 0; j < process.length; j++) {
-                    if (j === 1) {
-                      let str = process[j]
-                      str = await bcrypt.hash(str, await bcrypt.genSalt())
-                      noun.push(str)
-                    } else {
-                      noun.push(process[j])
-                    }
+                const arr = []
+                for (let i = 0; i < rows.length - 1; i++) {
+                  const select = await sequelize.query(`SELECT username from users WHERE username='${cek[i]}'`, {
+                    type: QueryTypes.SELECT
+                  })
+                  await sequelize.query(`DELETE from users WHERE username='${cek[i]}'`, {
+                    type: QueryTypes.DELETE
+                  })
+                  if (select.length > 0) {
+                    arr.push(select[0])
                   }
-                  create.push(noun)
                 }
-                const result = await sequelize.query(`INSERT INTO users (username, password, kode_depo, nama_depo, user_level) VALUES ${create.map(a => '(?)').join(',')}`,
-                  {
-                    replacements: create,
-                    type: QueryTypes.INSERT
-                  })
-                if (result) {
-                  fs.unlink(dokumen, function (err) {
-                    if (err) throw err
-                    console.log('success')
-                  })
-                  return response(res, 'successfully upload file master')
+                if (arr.length > 0) {
+                  rows.shift()
+                  const create = []
+                  for (let i = 0; i < rows.length; i++) {
+                    const noun = []
+                    const process = rows[i]
+                    for (let j = 0; j < process.length; j++) {
+                      if (j === 1) {
+                        let str = process[j]
+                        str = await bcrypt.hashSync(str, await bcrypt.genSaltSync())
+                        noun.push(str)
+                      } else if (j === 4) {
+                        noun.push(parseInt(process[j]))
+                      } else {
+                        noun.push(process[j])
+                      }
+                    }
+                    create.push(noun)
+                  }
+                  const result = await sequelize.query(`INSERT INTO users (username, password, kode_depo, nama_depo, user_level) VALUES ${create.map(a => '(?)').join(',')}`,
+                    {
+                      replacements: create,
+                      type: QueryTypes.INSERT
+                    })
+                  if (result) {
+                    fs.unlink(dokumen, function (err) {
+                      if (err) throw err
+                      console.log('success')
+                    })
+                    return response(res, 'successfully upload file master')
+                  } else {
+                    fs.unlink(dokumen, function (err) {
+                      if (err) throw err
+                      console.log('success')
+                    })
+                    return response(res, 'failed to upload file', {}, 404, false)
+                  }
                 } else {
-                  fs.unlink(dokumen, function (err) {
-                    if (err) throw err
-                    console.log('success')
-                  })
-                  return response(res, 'failed to upload file', {}, 404, false)
+                  rows.shift()
+                  const create = []
+                  for (let i = 0; i < rows.length; i++) {
+                    const noun = []
+                    const process = rows[i]
+                    for (let j = 0; j < process.length; j++) {
+                      if (j === 1) {
+                        let str = process[j]
+                        str = await bcrypt.hashSync(str, await bcrypt.genSaltSync())
+                        noun.push(str)
+                      } else if (j === 4) {
+                        noun.push(parseInt(process[j]))
+                      } else {
+                        noun.push(process[j])
+                      }
+                    }
+                    create.push(noun)
+                  }
+                  const result = await sequelize.query(`INSERT INTO users (username, password, kode_depo, nama_depo, user_level) VALUES ${create.map(a => '(?)').join(',')}`,
+                    {
+                      replacements: create,
+                      type: QueryTypes.INSERT
+                    })
+                  if (result) {
+                    fs.unlink(dokumen, function (err) {
+                      if (err) throw err
+                      console.log('success')
+                    })
+                    return response(res, 'successfully upload file master')
+                  } else {
+                    fs.unlink(dokumen, function (err) {
+                      if (err) throw err
+                      console.log('success')
+                    })
+                    return response(res, 'failed to upload file', {}, 404, false)
+                  }
                 }
               }
+            } else {
+              fs.unlink(dokumen, function (err) {
+                if (err) throw err
+                console.log('success')
+              })
+              return response(res, 'Failed to upload master file, please use the template provided', {}, 400, false)
             }
-          } else {
-            fs.unlink(dokumen, function (err) {
-              if (err) throw err
-              console.log('success')
-            })
-            return response(res, 'Failed to upload master file, please use the template provided', {}, 400, false)
+          } catch (error) {
+            return response(res, error.message, {}, 500, false)
           }
-        } catch (error) {
-          return response(res, error.message, {}, 500, false)
-        }
-      })
-    } else {
-      return response(res, "You're not super administrator", {}, 404, false)
+        })
+      } else {
+        return response(res, "You're not super administrator", {}, 404, false)
+      }
+    } catch (error) {
+      return response(res, error.message, {}, 500, false)
     }
   },
   exportSqlUser: async (req, res) => {
