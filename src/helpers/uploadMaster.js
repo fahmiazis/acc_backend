@@ -15,11 +15,22 @@ const storage = multer.diskStorage({
 })
 
 const fileFilter = (req, file, cb) => {
-  const allowedMimes = ['application/vnd.ms-excel', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet']
+  const allowedMimes = [
+    'application/vnd.ms-excel',
+    'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+    'application/zip',
+    'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+    'application/vnd.openxmlformats-officedocument.spreadsheetml.template',
+    'application/vnd.ms-excel.sheet.binary.macroEnabled.12',
+    'application/vnd.ms-excel.template.macroEnabled.12',
+    'application/vnd.ms-excel.addin.macroEnabled.12',
+    'application/vnd.ms-excel.sheet.macroEnabled.12'
+  ]
   if (allowedMimes.includes(file.mimetype)) {
     return cb(null, true)
   }
-  return cb(new Error('Invalid file type. Only excel files are allowed.'), false)
+  return cb(null, true)
+  // return cb(new Error('Invalid file type. Only excel files are allowed.'), false)
 }
 
-module.exports = multer({ storage, fileFilter, limits: { fileSize: 100000000 } }).array('master', 1)
+module.exports = multer({ storage, fileFilter, limits: { fileSize: 500000000 } }).array('master', 300)

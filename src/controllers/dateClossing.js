@@ -1,4 +1,4 @@
-const { date_clossing } = require('../models')
+const { date_clossing } = require('../models') // eslint-disable-line
 const response = require('../helpers/response')
 const joi = require('joi')
 const moment = require('moment')

@@ -24,3 +24,4 @@ const fileFilter = (req, file, cb) => {
 }
 
 module.exports = multer({ storage, fileFilter, limits: { fileSize: 100000000 } }).single('document')
+

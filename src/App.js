@@ -38,6 +38,9 @@ const picRoute = require('./routes/pic')
 const transRoute = require('./routes/transaction')
 const showRoute = require('./routes/show')
 
+// upload tax sales
+const datamergeRoute = require('./routes/datamerge')
+
 const authMiddleware = require('./middleware/auth')
 
 app.use('/uploads', express.static('assets/documents'))
@@ -55,6 +58,9 @@ app.use('/dokumen', authMiddleware, dokumenRoute)
 app.use('/depo', authMiddleware, depoRoute)
 app.use('/pic', authMiddleware, picRoute)
 app.use('/show', showRoute)
+
+// upload sales tax
+app.use('/datamerge', datamergeRoute)
 
 const options = {
   method: 'GET',

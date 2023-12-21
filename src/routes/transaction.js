@@ -1,7 +1,7 @@
 const route = require('express').Router()
 const trans = require('../controllers/transaction')
 
-route.get('/get', trans.dashboard)
+route.get('/get', trans.getDashboard)
 route.get('/activity', trans.getActivity)
 route.post('/upload/:id/:idAct', trans.uploadDocument)
 route.patch('/upload/edit/:id/:idAct', trans.editUploadDocument)

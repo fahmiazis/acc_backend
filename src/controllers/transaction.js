@@ -1,5 +1,5 @@
 const { pagination } = require('../helpers/pagination')
-const { documents, Path, depo, activity, pic, email, notif, date_clossing } = require('../models')
+const { documents, Path, depo, activity, pic, email, notif, date_clossing } = require('../models') // eslint-disable-line
 const { Op } = require('sequelize')
 const response = require('../helpers/response')
 const joi = require('joi')
@@ -14,7 +14,7 @@ const xlsx = require('xlsx')
 const wrapMail = require('../helpers/wrapMail')
 
 module.exports = {
-  dashboard: async (req, res) => {
+  getDashboard: async (req, res) => {
     try {
       let { limit, page, search, sort, typeSort, time, tipe, find } = req.query
       let searchValue = ''
@@ -3345,7 +3345,7 @@ module.exports = {
       if (typeof time === 'object') {
         timeValue = Object.values(time)[0]
       } else {
-        timeValue = time || ''
+        timeValue = time || '' // eslint-disable-line
       }
       if (typeof tipe === 'object') {
         tipeValue = Object.values(tipe)[0]

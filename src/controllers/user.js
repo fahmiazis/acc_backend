@@ -55,8 +55,10 @@ addUser: async (req, res) => {
               }
             } else {
               const result = await users.findAll({
-                where: { 
-                   username: results.username
+                where: {
+                  [Op.and]: [
+                    { username: results.username }
+                  ]
                 }
               })
               if (result.length > 0) {
