@@ -52,13 +52,14 @@ module.exports = {
             console.log(item + (','))
           )
         })
-        mailer.sendMail(mailOptions, (error, result) => {
-          if (error) {
-            return response(res, 'failed to send email', { error: error }, 401, false)
-          } else if (result) {
-            return response(res, 'success send email', { result: result })
-          }
-        })
+        // mailer.sendMail(mailOptions, (error, result) => {
+        //   if (error) {
+        //     return response(res, 'failed to send email', { error: error }, 401, false)
+        //   } else if (result) {
+        //     return response(res, 'success send email', { result: result })
+        //   }
+        // })
+        return response(res, 'success send email', { result: result })
       } else {
         console.log('failed')
       }

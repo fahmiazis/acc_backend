@@ -1,5 +1,5 @@
 const { pagination } = require('../helpers/pagination')
-const { documents, Path, depo, activity, pic, email, notif, date_clossing } = require('../models')
+const { documents, Path, depo, activity, pic, email, notif, date_clossing } = require('../models') // eslint-disable-line
 const { Op } = require('sequelize')
 const response = require('../helpers/response')
 const joi = require('joi')
@@ -14,7 +14,7 @@ const xlsx = require('xlsx')
 const wrapMail = require('../helpers/wrapMail')
 
 module.exports = {
-  dashboard: async (req, res) => {
+  getDashboard: async (req, res) => {
     try {
       let { limit, page, search, sort, typeSort, time, tipe, find } = req.query
       let searchValue = ''
@@ -1169,79 +1169,88 @@ module.exports = {
   approveDocument: async (req, res) => {
     // try {
     const level = req.user.level
-    const id = req.params.id
+    // const ids = req.params.id
     const idAct = req.params.idAct
+    const list = Object.values(req.body)
     if (level === 1 || level === 2 || level === 3) {
-      const result = await Path.findByPk(id)
-      let approve = { status_dokumen: 3 }
-      if (result) {
-        if (result.status_dokumen === 3 || result.status_dokumen === 5) {
-          const find = await notif.findOne({
-            where: {
-              [Op.or]: [
-                { upload: 'true' },
-                { reject: 'true' }
-              ],
-              pathId: id
-            }
-          })
-          if (find) {
-            await find.destroy()
-            return response(res, 'succes approve dokumen')
-          } else {
-            return response(res, 'succes approve dokumen')
-          }
-        } else if (result.status_dokumen === 4 || result.status_dokumen === 6) {
-          approve = { status_dokumen: 5 }
-          await result.update(approve)
-          const act = await activity.findByPk(idAct)
-          if (act) {
-            const send = { progress: act.progress + 1 }
-            await act.update(send)
+      const cek = []
+      for (let i = 0; i < list.length; i++) {
+        const result = await Path.findByPk(list[i])
+        let approve = { status_dokumen: 3 }
+        if (result) {
+          if (result.status_dokumen === 3 || result.status_dokumen === 5) {
             const find = await notif.findOne({
               where: {
                 [Op.or]: [
                   { upload: 'true' },
                   { reject: 'true' }
                 ],
-                pathId: id
+                pathId: list[i]
               }
             })
             if (find) {
               await find.destroy()
-              return response(res, 'succes approve dokumen')
+              cek.push(find)
             } else {
-              return response(res, 'succes approve dokumen')
+              cek.push(find)
+            }
+          } else if (result.status_dokumen === 4 || result.status_dokumen === 6) {
+            approve = { status_dokumen: 5 }
+            await result.update(approve)
+            const act = await activity.findByPk(idAct)
+            if (act) {
+              const send = { progress: act.progress + 1 }
+              await act.update(send)
+              const find = await notif.findOne({
+                where: {
+                  [Op.or]: [
+                    { upload: 'true' },
+                    { reject: 'true' }
+                  ],
+                  pathId: list[i]
+                }
+              })
+              if (find) {
+                await find.destroy()
+                cek.push(find)
+              } else {
+                cek.push(find)
+              }
+            } else {
+              cek.push()
             }
           } else {
-            return response(res, 'failed approve dokumen', {}, 404, false)
+            approve = { status_dokumen: 3 }
+            await result.update(approve)
+            const act = await activity.findByPk(idAct)
+            if (act) {
+              const send = { progress: act.progress + 1 }
+              await act.update(send)
+              const find = await notif.findOne({
+                where: {
+                  [Op.or]: [
+                    { upload: 'true' },
+                    { reject: 'true' }
+                  ],
+                  pathId: list[i]
+                }
+              })
+              if (find) {
+                await find.destroy()
+                cek.push(find)
+              } else {
+                cek.push(find)
+              }
+            } else {
+              cek.push()
+            }
           }
         } else {
-          approve = { status_dokumen: 3 }
-          await result.update(approve)
-          const act = await activity.findByPk(idAct)
-          if (act) {
-            const send = { progress: act.progress + 1 }
-            await act.update(send)
-            const find = await notif.findOne({
-              where: {
-                [Op.or]: [
-                  { upload: 'true' },
-                  { reject: 'true' }
-                ],
-                pathId: id
-              }
-            })
-            if (find) {
-              await find.destroy()
-              return response(res, 'succes approve dokumen')
-            } else {
-              return response(res, 'succes approve dokumen')
-            }
-          } else {
-            return response(res, 'failed approve dokumen', {}, 404, false)
-          }
+          cek.push()
         }
+      }
+      if (cek.length > 0) {
+        return response(res, 'succes approve dokumen')
       } else {
         return response(res, 'failed approve dokumen', {}, 404, false)
       }
@@ -1255,25 +1264,22 @@ module.exports = {
   rejectDocument: async (req, res) => {
     // try {
     const level = req.user.level
-    const id = req.params.id
+    // const ids = req.params.id
     const idAct = req.params.idAct
-    const schema = joi.object({
-      alasan: joi.string().required()
-    })
-    const { value: results, error } = schema.validate(req.body)
-    if (error) {
-      return response(res, 'Error', { error: error.message }, 404, false)
-    } else {
-      if (level === 1 || level === 2 || level === 3) {
-        const result = await Path.findByPk(id)
+    const list = Object.values(req.body)
+    const alasan = list[0]
+    if (level === 1 || level === 2 || level === 3) {
+      const cek = []
+      for (let i = 1; i < list.length; i++) {
+        const result = await Path.findByPk(list[i])
         let send = {
-          alasan: results.alasan,
+          alasan: alasan,
           status_dokumen: 0
         }
         if (result) {
           if (result.status_dokumen === 3) {
             send = {
-              alasan: results.alasan,
+              alasan: alasan,
               status_dokumen: 0
             }
             await result.update(send)
@@ -1287,7 +1293,7 @@ module.exports = {
                   reject: 'true',
                   upload: 'false',
                   activityId: idAct,
-                  pathId: id,
+                  pathId: list[i],
                   tipe: act.tipe
                 }
                 const find = await notif.findOne({
@@ -1296,25 +1302,25 @@ module.exports = {
                       { upload: 'true' },
                       { reject: 'true' }
                     ],
-                    pathId: id
+                    pathId: list[i]
                   }
                 })
                 if (find) {
                   await notif.create(data)
-                  return response(res, 'success reject dokumen')
+                  cek.push('success')
                 } else {
                   await notif.create(data)
-                  return response(res, 'success reject dokumen')
+                  cek.push('success')
                 }
               } else {
-                return response(res, 'failed reject dokumen', {}, 404, false)
+                cek.push()
               }
             } else {
-              return response(res, 'failed reject dokumen', {}, 404, false)
+              cek.push()
             }
           } else if (result.status_dokumen === 5) {
             send = {
-              alasan: results.alasan,
+              alasan: alasan,
               status_dokumen: 6
             }
             await result.update(send)
@@ -1328,7 +1334,7 @@ module.exports = {
                   reject: 'true',
                   upload: 'false',
                   activityId: idAct,
-                  pathId: id,
+                  pathId: list[i],
                   tipe: act.tipe
                 }
                 const find = await notif.findOne({
@@ -1337,27 +1343,27 @@ module.exports = {
                       { upload: 'true' },
                       { reject: 'true' }
                     ],
-                    pathId: id
+                    pathId: list[i]
                   }
                 })
                 if (find) {
                   await notif.create(data)
-                  return response(res, 'success reject dokumen')
+                  cek.push('success')
                 } else {
                   await notif.create(data)
-                  return response(res, 'success reject dokumen')
+                  cek.push('success')
                 }
               } else {
-                return response(res, 'failed reject dokumen', {}, 404, false)
+                cek.push()
               }
             } else {
-              return response(res, 'failed reject dokumen', {}, 404, false)
+              cek.push()
             }
           } else if (result.status_dokumen === 6 || result.status_dokumen === 0) {
-            return response(res, 'success reject dokumen')
+            cek.push('success')
           } else {
             send = {
-              alasan: results.alasan,
+              alasan: alasan,
               status_dokumen: 0
             }
             const update = await result.update(send)
@@ -1368,7 +1374,7 @@ module.exports = {
                 reject: 'true',
                 upload: 'false',
                 activityId: idAct,
-                pathId: id,
+                pathId: list[i],
                 tipe: act.tipe
               }
               const find = await notif.findOne({
@@ -1377,26 +1383,31 @@ module.exports = {
                     { upload: 'true' },
                     { reject: 'true' }
                   ],
-                  pathId: id
+                  pathId: list[i]
                 }
               })
               if (find) {
                 await notif.create(data)
-                return response(res, 'success reject dokumen')
+                cek.push('success')
               } else {
                 await notif.create(data)
-                return response(res, 'success reject dokumen')
+                cek.push('success')
               }
             } else {
-              return response(res, 'failed reject dokumen', {}, 404, false)
+              cek.push()
             }
           }
         } else {
-          return response(res, 'failed reject dokumen', {}, 404, false)
+          cek.push()
         }
-      } else {
-        return response(res, "you're not super administrator", {}, 404, false)
       }
+      if (cek.length > 0) {
+        return response(res, 'succes approve dokumen')
+      } else {
+        return response(res, 'failed reject dokumen', {}, 404, false)
+      }
+    } else {
+      return response(res, "you're not super administrator", {}, 404, false)
     }
     // } catch (error) {
     //   return response(res, error.message, {}, 500, false)
@@ -3334,7 +3345,7 @@ module.exports = {
       if (typeof time === 'object') {
         timeValue = Object.values(time)[0]
       } else {
-        timeValue = time || ''
+        timeValue = time || '' // eslint-disable-line
       }
       if (typeof tipe === 'object') {
         tipeValue = Object.values(tipe)[0]
