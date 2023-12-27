@@ -25,6 +25,7 @@ const { APP_PORT, APP_URL } = process.env
 app.use(bodyParser.urlencoded({ extended: false }))
 app.use(morgan('dev'))
 app.use(cors())
+// app.use(setTimeout(14400000))
 
 const userRoute = require('./routes/user')
 const authRoute = require('./routes/auth')
@@ -45,6 +46,7 @@ const authMiddleware = require('./middleware/auth')
 
 app.use('/uploads', express.static('assets/documents'))
 app.use('/masters', express.static('assets/masters'))
+app.use('/merge', express.static('assets/merge'))
 app.use('/download', express.static('assets/exports'))
 
 app.use('/auth', authRoute)

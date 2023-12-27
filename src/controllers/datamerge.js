@@ -1,4 +1,4 @@
-const { datamerge } = require('../models')
+const { datamerge, logupload } = require('../models')
 // const joi = require('joi')
 const { Op } = require('sequelize')
 const response = require('../helpers/response')
@@ -18,6 +18,7 @@ module.exports = {
   uploadMasterDataMerge: async (req, res) => {
     // const level = req.user.level
     // if (level === 1) {
+    req.setTimeout(14400000)
     uploadMaster(req, res, async function (err) {
       try {
         if (err instanceof multer.MulterError) {
@@ -38,14 +39,27 @@ module.exports = {
           // const rows = await readXlsxFile(dokumen)
           console.log(req.files[f])
           if (req.files[f].size === 0) {
-            const newPath = `assets/merge/${moment().format('DDMMYYYYhmms')}~${req.files[f].originalname}`
+            const newName = `${moment().format('DDMMYYYYhmms')}~${req.files[f].originalname}`
+            const newPath = `assets/merge/${newName}`
             failarr.push(req.files[f].originalname)
-            fs.rename(dokumen, newPath, function (err) {
+            fs.rename(dokumen, newPath, async function (err) {
               if (err) {
                 console.log(err)
                 console.log('failed upload, remove & delete ')
+                const data = {
+                  name: newName,
+                  error: 'size dokumen 0 kb',
+                  status: 'gagal'
+                }
+                await logupload.create(data)
               } else {
                 console.log('success upload, remove & delete')
+                const data = {
+                  name: newName,
+                  error: 'size dokumen 0 kb',
+                  status: 'gagal'
+                }
+                await logupload.create(data)
               }
             })
           } else {
@@ -100,88 +114,155 @@ module.exports = {
               } else {
                 const sendArr = []
                 if (isNaN(parseInt(lengthRow)) === false) {
-                  // for (let i = 0; i < parseInt(lengthRow); i++) {
-                  for (let i = parseInt(lengthRow) - 1; i < parseInt(lengthRow); i++) {
-                    if (dataRow[`A${i}`] !== undefined && isNaN(parseFloat(dataRow[`A${i}`].w)) === false) {
-                      const sendData = {
-                        nama_depo: dataRow.A10 !== undefined ? dataRow.A10.w : dataRow.A6 !== undefined ? dataRow.A6.w : '',
-                        kode_outlet: dataRow[`A${i}`] !== undefined ? dataRow[`A${i}`].w : '',
-                        nama_outlet: dataRow[`B${i}`] !== undefined ? dataRow[`B${i}`].w : '',
-                        kode_sales: dataRow[`C${i}`] !== undefined ? dataRow[`C${i}`].w : '',
-                        nama_sales: dataRow[`D${i}`] !== undefined ? dataRow[`D${i}`].w : '',
-                        tgl_faktur: dataRow[`E${i}`] !== undefined ? dataRow[`E${i}`].w : '',
-                        no_faktur: dataRow[`F${i}`] !== undefined ? dataRow[`F${i}`].w : '',
-                        gross_sales: dataRow[`G${i}`] !== undefined ? dataRow[`G${i}`].w : '',
-                        rp_discpc: dataRow[`H${i}`] !== undefined ? dataRow[`H${i}`].w : '',
-                        disc1: dataRow[`I${i}`] !== undefined ? dataRow[`I${i}`].w : '',
-                        disc2: dataRow[`J${i}`] !== undefined ? dataRow[`J${i}`].w : '',
-                        pro_amount: dataRow[`K${i}`] !== undefined ? dataRow[`K${i}`].w : '',
-                        cash_disct: dataRow[`L${i}`] !== undefined ? dataRow[`L${i}`].w : '',
-                        ppn: dataRow[`M${i}`] !== undefined ? dataRow[`M${i}`].w : '',
-                        total: dataRow[`N${i}`] !== undefined ? dataRow[`N${i}`].w : '',
-                        type: dataRow[`O${i}`] !== undefined ? dataRow[`O${i}`].w : '',
-                        pcode: dataRow[`P${i}`] !== undefined ? dataRow[`P${i}`].w : '',
-                        nama_produk: dataRow[`Q${i}`] !== undefined ? dataRow[`Q${i}`].w : '',
-                        qty_pcs: dataRow[`R${i}`] !== undefined ? dataRow[`R${i}`].w : '',
-                        kode_retur: dataRow[`S${i}`] !== undefined ? dataRow[`S${i}`].w : '',
-                        nama_retur: dataRow[`T${i}`] !== undefined ? dataRow[`T${i}`].w : '',
-                        tgl_retur: dataRow[`U${i}`] !== undefined ? dataRow[`U${i}`].w : '',
-                        invort: dataRow[`V${i}`] !== undefined ? dataRow[`V${i}`].w : '',
-                        remark: dataRow[`W${i}`] !== undefined ? dataRow[`W${i}`].w : '',
-                        keterangan: dataRow[`X${i}`] !== undefined ? dataRow[`X${i}`].w : ''
+                  let startRow = ''
+                  for (let i = 0; i < parseInt(lengthRow); i++) {
+                    const cekLength = dataRow[`A${i}`] !== undefined ? dataRow[`A${i}`].w.replace(/[()-._,?/{}]/g, ' ') : 'null'
+                    if (cekLength !== undefined) {
+                      const cekName = cekLength.split(' ')[cekLength.split(' ').length - 1]
+                      if (cekName.toLowerCase() === 'mt' || cekName.toLowerCase() === 'gt') {
+                        startRow = cekLength
+                        break
                       }
-                      // console.log(sendData)
-                      // const createDataMerge = await datamerge.create(sendData)
-                      // if (createDataMerge) {
-                      //   arr.push(1)
-                      // }
-                      sendArr.push(sendData)
                     }
-                  // else {
-                  //   console.log(dataRow[`A${i}`])
-                  //   console.log(isNaN(parseFloat(dataRow[`A${i}`])))
-                  // }
                   }
-                  if (sendArr.length > 0) {
-                    const createDataMerge = await datamerge.bulkCreate(sendArr)
-                    if (createDataMerge) {
-                      arr.push(req.files[f].originalname)
-                      fs.unlink(dokumen, function (err) {
-                        if (err) {
-                          console.log('successfully upload file master')
-                        } else {
-                          console.log('successfully upload file master')
-                        }
-                      })
-                    } else {
-                      failarr.push(req.files[f].originalname)
-                      fs.unlink(dokumen, function (err) {
-                        if (err) {
-                          console.log('successfully upload file master else')
-                        } else {
-                          console.log('successfully upload file master else')
-                        }
-                      })
-                    }
-                  } else {
+                  console.log(startRow)
+                  if (startRow === '') {
+                    const newName = `${moment().format('DDMMYYYYhmms')}~${req.files[f].originalname}`
+                    const newPath = `assets/merge/${newName}`
                     failarr.push(req.files[f].originalname)
-                    fs.unlink(dokumen, function (err) {
+                    fs.rename(dokumen, newPath, async function (err) {
                       if (err) {
-                        console.log('failed upload file master')
+                        console.log(err)
+                        console.log('failed upload, remove & delete, cant read file')
+                        const data = {
+                          name: newName,
+                          error: 'Nama depo tidak ditemukan atau tidak sesuai format (tidak mengandung gt/mt)',
+                          status: 'gagal'
+                        }
+                        await logupload.create(data)
                       } else {
-                        console.log('failed upload file master')
+                        console.log('success upload, remove & delete, cant read file')
+                        const data = {
+                          name: newName,
+                          error: 'Nama depo tidak ditemukan atau tidak sesuai format (tidak mengandung gt/mt)',
+                          status: 'gagal'
+                        }
+                        await logupload.create(data)
                       }
                     })
+                  } else {
+                    for (let i = 0; i < parseInt(lengthRow); i++) {
+                    // for (let i = parseInt(lengthRow) - 1; i < parseInt(lengthRow); i++) {
+                      if (dataRow[`A${i}`] !== undefined && isNaN(parseFloat(dataRow[`A${i}`].w)) === false) {
+                        const sendData = {
+                          nama_depo: startRow,
+                          kode_outlet: dataRow[`A${i}`] !== undefined ? dataRow[`A${i}`].w : '',
+                          nama_outlet: dataRow[`B${i}`] !== undefined ? dataRow[`B${i}`].w : '',
+                          kode_sales: dataRow[`C${i}`] !== undefined ? dataRow[`C${i}`].w : '',
+                          nama_sales: dataRow[`D${i}`] !== undefined ? dataRow[`D${i}`].w : '',
+                          tgl_faktur: dataRow[`E${i}`] !== undefined ? dataRow[`E${i}`].w : '',
+                          no_faktur: dataRow[`F${i}`] !== undefined ? dataRow[`F${i}`].w : '',
+                          gross_sales: dataRow[`G${i}`] !== undefined ? dataRow[`G${i}`].w : '',
+                          rp_discpc: dataRow[`H${i}`] !== undefined ? dataRow[`H${i}`].w : '',
+                          disc1: dataRow[`I${i}`] !== undefined ? dataRow[`I${i}`].w : '',
+                          disc2: dataRow[`J${i}`] !== undefined ? dataRow[`J${i}`].w : '',
+                          pro_amount: dataRow[`K${i}`] !== undefined ? dataRow[`K${i}`].w : '',
+                          cash_disct: dataRow[`L${i}`] !== undefined ? dataRow[`L${i}`].w : '',
+                          ppn: dataRow[`M${i}`] !== undefined ? dataRow[`M${i}`].w : '',
+                          total: dataRow[`N${i}`] !== undefined ? dataRow[`N${i}`].w : '',
+                          type: dataRow[`O${i}`] !== undefined ? dataRow[`O${i}`].w : '',
+                          pcode: dataRow[`P${i}`] !== undefined ? dataRow[`P${i}`].w : '',
+                          nama_produk: dataRow[`Q${i}`] !== undefined ? dataRow[`Q${i}`].w : '',
+                          qty_pcs: dataRow[`R${i}`] !== undefined ? dataRow[`R${i}`].w : '',
+                          kode_retur: dataRow[`S${i}`] !== undefined ? dataRow[`S${i}`].w : '',
+                          nama_retur: dataRow[`T${i}`] !== undefined ? dataRow[`T${i}`].w : '',
+                          tgl_retur: dataRow[`U${i}`] !== undefined ? dataRow[`U${i}`].w : '',
+                          invort: dataRow[`V${i}`] !== undefined ? dataRow[`V${i}`].w : '',
+                          remark: dataRow[`W${i}`] !== undefined ? dataRow[`W${i}`].w : '',
+                          keterangan: dataRow[`X${i}`] !== undefined ? dataRow[`X${i}`].w : ''
+                        }
+                        // console.log(sendData)
+                        // const createDataMerge = await datamerge.create(sendData)
+                        // if (createDataMerge) {
+                        //   arr.push(1)
+                        // }
+                        sendArr.push(sendData)
+                      }
+                    // else {
+                    //   console.log(dataRow[`A${i}`])
+                    //   console.log(isNaN(parseFloat(dataRow[`A${i}`])))
+                    // }
+                    }
+                    if (sendArr.length > 0) {
+                      const createDataMerge = await datamerge.bulkCreate(sendArr)
+                      if (createDataMerge) {
+                        arr.push(req.files[f].originalname)
+                        fs.unlink(dokumen, async function (err) {
+                          if (err) {
+                            console.log('successfully upload file master')
+                          } else {
+                            console.log('successfully upload file master')
+                          }
+                          const data = {
+                            name: req.files[f].originalname,
+                            status: 'success'
+                          }
+                          await logupload.create(data)
+                        })
+                      } else {
+                        failarr.push(req.files[f].originalname)
+                        fs.unlink(dokumen, async function (err) {
+                          if (err) {
+                            console.log('successfully upload file master else')
+                          } else {
+                            console.log('successfully upload file master else')
+                          }
+                          const data = {
+                            name: req.files[f].originalname,
+                            status: 'success'
+                          }
+                          await logupload.create(data)
+                        })
+                      }
+                    } else {
+                      failarr.push(req.files[f].originalname)
+                      fs.unlink(dokumen, async function (err) {
+                        if (err) {
+                          console.log('failed upload file master')
+                        } else {
+                          console.log('failed upload file master')
+                        }
+                        const data = {
+                          name: req.files[f].originalname,
+                          error: 'Dokumen tidak terbaca oleh sistem (corrupt file)',
+                          status: 'gagal'
+                        }
+                        await logupload.create(data)
+                      })
+                    }
                   }
                 } else {
-                  const newPath = `assets/merge/${moment().format('DDMMYYYYhmms')}~${req.files[f].originalname}`
+                  const newName = `${moment().format('DDMMYYYYhmms')}~${req.files[f].originalname}`
+                  const newPath = `assets/merge/${newName}`
                   failarr.push(req.files[f].originalname)
-                  fs.rename(dokumen, newPath, function (err) {
+                  fs.rename(dokumen, newPath, async function (err) {
                     if (err) {
                       console.log(err)
                       console.log('failed upload, remove & delete, cant read file')
+                      const data = {
+                        name: newName,
+                        error: 'Dokumen tidak terbaca oleh sistem (corrupt file)',
+                        status: 'gagal'
+                      }
+                      await logupload.create(data)
                     } else {
                       console.log('success upload, remove & delete, cant read file')
+                      const data = {
+                        name: newName,
+                        error: 'Dokumen tidak terbaca oleh sistem (corrupt file)',
+                        status: 'gagal'
+                      }
+                      await logupload.create(data)
                     }
                   })
                 }
@@ -200,6 +281,7 @@ module.exports = {
         if (arr.length > 0) {
           return response(res, 'Succes upload', { succesUpload: arr, failedUpload: failarr })
         } else {
+          console.log(req.files)
           return response(res, 'failed upload', { failedUpload: failarr })
         }
       } catch (error) {
@@ -345,51 +427,71 @@ module.exports = {
   },
   getAllDataMerge: async (req, res) => {
     try {
-      let { limit, page, search, sort } = req.query
+      let { limit, page, search, sort, typeSort } = req.query
       let searchValue = ''
       let sortValue = ''
+      let typeSortValue = ''
       if (typeof search === 'object') {
         searchValue = Object.values(search)[0]
       } else {
         searchValue = search || ''
       }
+
       if (typeof sort === 'object') {
         sortValue = Object.values(sort)[0]
       } else {
         sortValue = sort || 'id'
       }
+
       if (!limit) {
         limit = 10
       } else {
         limit = parseInt(limit)
       }
+
       if (!page) {
         page = 1
       } else {
         page = parseInt(page)
       }
+
+      if (typeof typeSort === 'object') {
+        typeSortValue = Object.values(typeSort)[0]
+      } else {
+        typeSortValue = typeSort || 'ASC'
+      }
       const findDataMerge = await datamerge.findAndCountAll({
         where: {
           [Op.or]: [
-            { kode_plant: { [Op.like]: `%${searchValue}%` } },
-            { kode_dist: { [Op.like]: `%${searchValue}%` } },
-            { profit_center: { [Op.like]: `%${searchValue}%` } },
-            { area: { [Op.like]: `%${searchValue}%` } },
-            { area_sap: { [Op.like]: `%${searchValue}%` } },
-            { ksni: { [Op.like]: `%${searchValue}%` } },
-            { nni: { [Op.like]: `%${searchValue}%` } },
-            { nsi: { [Op.like]: `%${searchValue}%` } },
-            { mas: { [Op.like]: `%${searchValue}%` } },
-            { mcp: { [Op.like]: `%${searchValue}%` } },
-            { simba: { [Op.like]: `%${searchValue}%` } },
-            { lotte: { [Op.like]: `%${searchValue}%` } },
-            { mun: { [Op.like]: `%${searchValue}%` } },
-            { eiti: { [Op.like]: `%${searchValue}%` } },
-            { edot: { [Op.like]: `%${searchValue}%` } },
-            { meiji: { [Op.like]: `%${searchValue}%` } }
+            { kode_depo: { [Op.like]: `%${searchValue}%` } },
+            { nama_depo: { [Op.like]: `%${searchValue}%` } },
+            { kode_outlet: { [Op.like]: `%${searchValue}%` } },
+            { nama_outlet: { [Op.like]: `%${searchValue}%` } },
+            { kode_sales: { [Op.like]: `%${searchValue}%` } },
+            { nama_sales: { [Op.like]: `%${searchValue}%` } },
+            { tgl_faktur: { [Op.like]: `%${searchValue}%` } },
+            { no_faktur: { [Op.like]: `%${searchValue}%` } },
+            { gross_sales: { [Op.like]: `%${searchValue}%` } },
+            { rp_discpc: { [Op.like]: `%${searchValue}%` } },
+            { disc1: { [Op.like]: `%${searchValue}%` } },
+            { disc2: { [Op.like]: `%${searchValue}%` } },
+            { pro_amount: { [Op.like]: `%${searchValue}%` } },
+            { cash_disct: { [Op.like]: `%${searchValue}%` } },
+            { ppn: { [Op.like]: `%${searchValue}%` } },
+            { total: { [Op.like]: `%${searchValue}%` } },
+            { type: { [Op.like]: `%${searchValue}%` } },
+            { pcode: { [Op.like]: `%${searchValue}%` } },
+            { nama_produk: { [Op.like]: `%${searchValue}%` } },
+            { qty_pcs: { [Op.like]: `%${searchValue}%` } },
+            { kode_retur: { [Op.like]: `%${searchValue}%` } },
+            { nama_retur: { [Op.like]: `%${searchValue}%` } },
+            { tgl_retur: { [Op.like]: `%${searchValue}%` } },
+            { invort: { [Op.like]: `%${searchValue}%` } },
+            { remark: { [Op.like]: `%${searchValue}%` } },
+            { keterangan: { [Op.like]: `%${searchValue}%` } }
           ]
         },
-        order: [[sortValue, 'ASC']],
+        order: [[sortValue, typeSortValue]],
         limit: limit,
         offset: (page - 1) * limit
       })
@@ -398,6 +500,63 @@ module.exports = {
         return response(res, 'succes get datamerge', { result: findDataMerge, pageInfo })
       } else {
         return response(res, 'failed get datamerge', { result: [], pageInfo })
+      }
+    } catch (error) {
+      return response(res, error.message, {}, 500, false)
+    }
+  },
+  getAllLog: async (req, res) => {
+    try {
+      let { limit, page, search, sort, typeSort } = req.query
+      let searchValue = ''
+      let sortValue = ''
+      let typeSortValue = ''
+      if (typeof search === 'object') {
+        searchValue = Object.values(search)[0]
+      } else {
+        searchValue = search || ''
+      }
+
+      if (typeof sort === 'object') {
+        sortValue = Object.values(sort)[0]
+      } else {
+        sortValue = sort || 'id'
+      }
+
+      if (!limit) {
+        limit = 10
+      } else {
+        limit = parseInt(limit)
+      }
+
+      if (!page) {
+        page = 1
+      } else {
+        page = parseInt(page)
+      }
+
+      if (typeof typeSort === 'object') {
+        typeSortValue = Object.values(typeSort)[0]
+      } else {
+        typeSortValue = typeSort || 'ASC'
+      }
+      const findDataLog = await logupload.findAndCountAll({
+        where: {
+          [Op.or]: [
+            { name: { [Op.like]: `%${searchValue}%` } },
+            { error: { [Op.like]: `%${searchValue}%` } },
+            { status: { [Op.like]: `%${searchValue}%` } }
+          ]
+        },
+        order: [[sortValue, typeSortValue]],
+        limit: limit,
+        offset: (page - 1) * limit
+      })
+      const pageInfo = pagination('/datamerge/log', req.query, page, limit, findDataLog.count)
+      if (findDataLog) {
+        return response(res, 'succes get log upload', { result: findDataLog, pageInfo })
+      } else {
+        return response(res, 'failed get log upload', { result: [], pageInfo })
       }
     } catch (error) {
       return response(res, error.message, {}, 500, false)
