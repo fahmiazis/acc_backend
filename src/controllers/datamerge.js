@@ -11,7 +11,7 @@ const moment = require('moment')
 const excel = require('exceljs')
 const xlsx = require('xlsx')
 const vs = require('fs-extra')
-const JSZip = require('JSZip')
+// const JSZip = require('JSZip')
 const { APP_URL } = process.env
 
 module.exports = {
@@ -226,95 +226,102 @@ module.exports = {
           return response(res, err.message, {}, 401, false)
         }
         const dokumen = `assets/masters/${req.files[0].filename}`
+        fs.unlink(dokumen, function (err) {
+          if (err) {
+            return response(res, 'success read failed upload delete', { })
+          } else {
+            return response(res, 'success read and delete failed upload', { })
+          }
+        })
         // const dokumen = 'https://cloud.pinusmerahabadi.co.id/index.php/s/QgNDGy8Pby2LKwY/download?path=%2F&files=2019-01.zip'
         // const dataTemp = []
         // const arr = []
-        fs.readFile(dokumen, function (err, data) {
-          if (!err) {
-            const zip = new JSZip()
-            zip.loadAsync(data).then(async function (contents) {
-              const xlTemp = []
-              // xlTemp.push(rows[29][0])
-              const dataFile = contents.files
-              const convData = Object.keys(dataFile)
-              for (let i = 1; i < convData.length; i++) {
-                await zip.file(convData[i]).async('nodebuffer').then(async function (content) {
-                  // const rows = await readXlsxFile(Buffer.from(content))
-                  // console.log(rows)
-                  const rows = xlsx.read(content)
-                  const headRow = Object.keys(rows.Sheets[Object.keys(rows.Sheets)[0]])
-                  const dataRow = rows.Sheets[Object.keys(rows.Sheets)[0]]
-                  const parRow = headRow[headRow.length - 2]
-                  const initialValue = ''
-                  const splRow = parRow.split('')
-                  splRow.shift()
-                  const lengthRow = splRow.reduce(
-                    (accumulator, currentValue) => accumulator + currentValue,
-                    initialValue
-                  )
-                  console.log(headRow)
-                  console.log(splRow)
-                  console.log(lengthRow)
-                  // for (let i = 0; i < 33; i++) {
-                  for (let i = 0; i < parseInt(initialValue); i++) {
-                    if (dataRow[`A${i}`] !== undefined && isNaN(parseFloat(dataRow[`A${i}`])) === false) {
-                      const sendData = {
-                        nama_depo: dataRow.A10 !== undefined ? dataRow.A10.w : '',
-                        kode_outlet: dataRow[`A${i}`] !== undefined ? dataRow[`A${i}`].w : '',
-                        nama_outlet: dataRow[`B${i}`] !== undefined ? dataRow[`B${i}`].w : '',
-                        kode_sales: dataRow[`C${i}`] !== undefined ? dataRow[`C${i}`].w : '',
-                        nama_sales: dataRow[`D${i}`] !== undefined ? dataRow[`D${i}`].w : '',
-                        tgl_faktur: dataRow[`E${i}`] !== undefined ? dataRow[`E${i}`].w : '',
-                        no_faktur: dataRow[`F${i}`] !== undefined ? dataRow[`F${i}`].w : '',
-                        gross_sales: dataRow[`G${i}`] !== undefined ? dataRow[`G${i}`].w : '',
-                        rp_discpc: dataRow[`H${i}`] !== undefined ? dataRow[`H${i}`].w : '',
-                        disc1: dataRow[`I${i}`] !== undefined ? dataRow[`I${i}`].w : '',
-                        disc2: dataRow[`J${i}`] !== undefined ? dataRow[`J${i}`].w : '',
-                        pro_amount: dataRow[`K${i}`] !== undefined ? dataRow[`K${i}`].w : '',
-                        cash_disct: dataRow[`L${i}`] !== undefined ? dataRow[`L${i}`].w : '',
-                        ppn: dataRow[`M${i}`] !== undefined ? dataRow[`M${i}`].w : '',
-                        total: dataRow[`N${i}`] !== undefined ? dataRow[`N${i}`].w : '',
-                        type: dataRow[`O${i}`] !== undefined ? dataRow[`O${i}`].w : '',
-                        pcode: dataRow[`P${i}`] !== undefined ? dataRow[`P${i}`].w : '',
-                        nama_produk: dataRow[`Q${i}`] !== undefined ? dataRow[`Q${i}`].w : '',
-                        qty_pcs: dataRow[`R${i}`] !== undefined ? dataRow[`R${i}`].w : '',
-                        kode_retur: dataRow[`S${i}`] !== undefined ? dataRow[`S${i}`].w : '',
-                        nama_retur: dataRow[`T${i}`] !== undefined ? dataRow[`T${i}`].w : '',
-                        tgl_retur: dataRow[`U${i}`] !== undefined ? dataRow[`U${i}`].w : '',
-                        invort: dataRow[`V${i}`] !== undefined ? dataRow[`V${i}`].w : '',
-                        remark: dataRow[`W${i}`] !== undefined ? dataRow[`W${i}`].w : '',
-                        keterangan: dataRow[`X${i}`] !== undefined ? dataRow[`X${i}`].w : ''
-                      }
-                      await datamerge.create(sendData)
-                    }
-                  }
-                  // console.log(parRow)
-                  // console.log(lengthRow)
-                  // console.log(dataRow[parRow])
-                  // console.log(dataRow.A29)
-                })
-                xlTemp.push(convData[i])
-              }
-              if (xlTemp.length > 0) {
-                fs.unlink(dokumen, function (err) {
-                  if (err) {
-                    return response(res, 'success upload read failed delete', { xlTemp })
-                  } else {
-                    return response(res, 'success upload read and delete', { xlTemp })
-                  }
-                })
-              } else {
-                fs.unlink(dokumen, function (err) {
-                  if (err) {
-                    return response(res, 'success read failed upload delete', { xlTemp })
-                  } else {
-                    return response(res, 'success read and delete failed upload', { xlTemp })
-                  }
-                })
-              }
-            })
-          }
-        })
+        // fs.readFile(dokumen, function (err, data) {
+        //   if (!err) {
+        //     const zip = new JSZip()
+        //     zip.loadAsync(data).then(async function (contents) {
+        //       const xlTemp = []
+        //       // xlTemp.push(rows[29][0])
+        //       const dataFile = contents.files
+        //       const convData = Object.keys(dataFile)
+        //       for (let i = 1; i < convData.length; i++) {
+        //         await zip.file(convData[i]).async('nodebuffer').then(async function (content) {
+        //           // const rows = await readXlsxFile(Buffer.from(content))
+        //           // console.log(rows)
+        //           const rows = xlsx.read(content)
+        //           const headRow = Object.keys(rows.Sheets[Object.keys(rows.Sheets)[0]])
+        //           const dataRow = rows.Sheets[Object.keys(rows.Sheets)[0]]
+        //           const parRow = headRow[headRow.length - 2]
+        //           const initialValue = ''
+        //           const splRow = parRow.split('')
+        //           splRow.shift()
+        //           const lengthRow = splRow.reduce(
+        //             (accumulator, currentValue) => accumulator + currentValue,
+        //             initialValue
+        //           )
+        //           console.log(headRow)
+        //           console.log(splRow)
+        //           console.log(lengthRow)
+        //           // for (let i = 0; i < 33; i++) {
+        //           for (let i = 0; i < parseInt(initialValue); i++) {
+        //             if (dataRow[`A${i}`] !== undefined && isNaN(parseFloat(dataRow[`A${i}`])) === false) {
+        //               const sendData = {
+        //                 nama_depo: dataRow.A10 !== undefined ? dataRow.A10.w : '',
+        //                 kode_outlet: dataRow[`A${i}`] !== undefined ? dataRow[`A${i}`].w : '',
+        //                 nama_outlet: dataRow[`B${i}`] !== undefined ? dataRow[`B${i}`].w : '',
+        //                 kode_sales: dataRow[`C${i}`] !== undefined ? dataRow[`C${i}`].w : '',
+        //                 nama_sales: dataRow[`D${i}`] !== undefined ? dataRow[`D${i}`].w : '',
+        //                 tgl_faktur: dataRow[`E${i}`] !== undefined ? dataRow[`E${i}`].w : '',
+        //                 no_faktur: dataRow[`F${i}`] !== undefined ? dataRow[`F${i}`].w : '',
+        //                 gross_sales: dataRow[`G${i}`] !== undefined ? dataRow[`G${i}`].w : '',
+        //                 rp_discpc: dataRow[`H${i}`] !== undefined ? dataRow[`H${i}`].w : '',
+        //                 disc1: dataRow[`I${i}`] !== undefined ? dataRow[`I${i}`].w : '',
+        //                 disc2: dataRow[`J${i}`] !== undefined ? dataRow[`J${i}`].w : '',
+        //                 pro_amount: dataRow[`K${i}`] !== undefined ? dataRow[`K${i}`].w : '',
+        //                 cash_disct: dataRow[`L${i}`] !== undefined ? dataRow[`L${i}`].w : '',
+        //                 ppn: dataRow[`M${i}`] !== undefined ? dataRow[`M${i}`].w : '',
+        //                 total: dataRow[`N${i}`] !== undefined ? dataRow[`N${i}`].w : '',
+        //                 type: dataRow[`O${i}`] !== undefined ? dataRow[`O${i}`].w : '',
+        //                 pcode: dataRow[`P${i}`] !== undefined ? dataRow[`P${i}`].w : '',
+        //                 nama_produk: dataRow[`Q${i}`] !== undefined ? dataRow[`Q${i}`].w : '',
+        //                 qty_pcs: dataRow[`R${i}`] !== undefined ? dataRow[`R${i}`].w : '',
+        //                 kode_retur: dataRow[`S${i}`] !== undefined ? dataRow[`S${i}`].w : '',
+        //                 nama_retur: dataRow[`T${i}`] !== undefined ? dataRow[`T${i}`].w : '',
+        //                 tgl_retur: dataRow[`U${i}`] !== undefined ? dataRow[`U${i}`].w : '',
+        //                 invort: dataRow[`V${i}`] !== undefined ? dataRow[`V${i}`].w : '',
+        //                 remark: dataRow[`W${i}`] !== undefined ? dataRow[`W${i}`].w : '',
+        //                 keterangan: dataRow[`X${i}`] !== undefined ? dataRow[`X${i}`].w : ''
+        //               }
+        //               await datamerge.create(sendData)
+        //             }
+        //           }
+        //           // console.log(parRow)
+        //           // console.log(lengthRow)
+        //           // console.log(dataRow[parRow])
+        //           // console.log(dataRow.A29)
+        //         })
+        //         xlTemp.push(convData[i])
+        //       }
+        //       if (xlTemp.length > 0) {
+        //         fs.unlink(dokumen, function (err) {
+        //           if (err) {
+        //             return response(res, 'success upload read failed delete', { xlTemp })
+        //           } else {
+        //             return response(res, 'success upload read and delete', { xlTemp })
+        //           }
+        //         })
+        //       } else {
+        //         fs.unlink(dokumen, function (err) {
+        //           if (err) {
+        //             return response(res, 'success read failed upload delete', { xlTemp })
+        //           } else {
+        //             return response(res, 'success read and delete failed upload', { xlTemp })
+        //           }
+        //         })
+        //       }
+        //     })
+        //   }
+        // })
       } catch (error) {
         return response(res, error.message, {}, 500, false)
       }
