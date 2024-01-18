@@ -25,7 +25,8 @@ module.exports = {
         kode_depo: joi.number(),
         lock_dokumen: joi.number(),
         alasan: joi.string(),
-        status: joi.string().valid('active', 'inactive')
+        status: joi.string().valid('active', 'inactive'),
+        access: joi.string().allow('')
       })
       const { value: results, error } = schema.validate(req.body)
       if (error) {
@@ -70,7 +71,8 @@ module.exports = {
         createdAt: joi.string(),
         postDokumen: joi.date(),
         status_depo: joi.string().valid('Cabang SAP', 'Cabang Scylla', 'Depo SAP', 'Depo Scylla'),
-        status: joi.string().valid('active', 'inactive')
+        status: joi.string().valid('active', 'inactive'),
+        access: joi.string().allow('')
       })
       const { value: results, error } = schema.validate(req.body)
       if (error) {

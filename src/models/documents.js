@@ -20,7 +20,8 @@ module.exports = (sequelize, DataTypes) => {
     divisi: DataTypes.STRING,
     status_depo: DataTypes.ENUM('Cabang SAP', 'Cabang Scylla', 'Depo SAP', 'Depo Scylla'),
     uploadedBy: DataTypes.ENUM('sa', 'kasir'),
-    status: DataTypes.ENUM('active', 'inactive')
+    status: DataTypes.ENUM('active', 'inactive'),
+    access: DataTypes.TEXT
   }, {
     sequelize,
     modelName: 'documents'
