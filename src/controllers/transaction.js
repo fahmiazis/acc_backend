@@ -84,6 +84,12 @@ module.exports = {
                 { nama_dokumen: { [Op.like]: `%${searchValue}%` } }
               ],
               [Op.and]: [
+                {
+                  [Op.or]: [
+                    { access: { [Op.like]: `%${kode}%` } },
+                    { access: null }
+                  ]
+                },
                 { status_depo: cabang },
                 { uploadedBy: 'sa' },
                 { jenis_dokumen: { [Op.like]: `%${tipeValue}%` } }
@@ -213,6 +219,12 @@ module.exports = {
                 { nama_dokumen: { [Op.like]: `%${searchValue}%` } }
               ],
               [Op.and]: [
+                {
+                  [Op.or]: [
+                    { access: { [Op.like]: `%${kode}%` } },
+                    { access: null }
+                  ]
+                },
                 { status_depo: cabang },
                 { uploadedBy: 'kasir' },
                 { jenis_dokumen: { [Op.like]: `%${tipeValue}%` } }
@@ -3538,6 +3550,48 @@ module.exports = {
         } else {
           return response(res, "you're not user spv", {}, 404, false)
         }
+      }
+    } catch (error) {
+      return response(res, error.message, {}, 500, false)
+    }
+  },
+  testGetDocument: async (req, res) => {
+    try {
+      const kode = req.user.kode
+      const result = await depo.findOne({
+        where: {
+          kode_plant: kode
+        }
+      })
+      if (result) {
+        const cabang = result.status_depo
+        const findDoc = await documents.findAndCountAll({
+          where: {
+            [Op.or]: [
+              { nama_dokumen: { [Op.like]: '%%' } }
+            ],
+            [Op.and]: [
+              {
+                [Op.or]: [
+                  { access: { [Op.like]: `%${kode}%` } },
+                  { access: null }
+                ]
+              },
+              { status_depo: cabang },
+              { uploadedBy: 'kasir' },
+              { jenis_dokumen: { [Op.like]: '%daily%' } }
+            ],
+            [Op.not]: { status: 'inactive' }
+          },
+          order: [['id', 'DESC']]
+        })
+        if (findDoc) {
+          return response(res, 'success', { findDoc })
+        } else {
+          return response(res, 'failed', {}, 400, false)
+        }
+      } else {
+        return response(res, 'failed', {}, 400, false)
       }
     } catch (error) {
       return response(res, error.message, {}, 500, false)

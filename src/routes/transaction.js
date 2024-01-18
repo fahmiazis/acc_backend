@@ -13,5 +13,6 @@ route.post('/report', trans.reportDokumen)
 route.get('/active', trans.getAllActivity)
 route.patch('/edit/:id', trans.editAccessActive)
 route.get('/notif', trans.getNotif)
+route.get('/test', trans.testGetDocument)
 
 module.exports = route
