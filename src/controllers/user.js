@@ -186,12 +186,23 @@ module.exports = {
   deleteUser: async (req, res) => {
     try {
       const level = req.user.level
-      const id = req.params.id
+      const { listId } = req.body
+      console.log(req.body)
       if (level === 1) {
-        const result = await users.findByPk(id)
-        if (result) {
-          await result.destroy()
-          return response(res, 'delete user success', { result })
+        if (listId !== undefined && listId.length > 0) {
+          const cekData = []
+          for (let i = 0; i < listId.length; i++) {
+            const result = await users.findByPk(listId[i])
+            if (result) {
+              await result.destroy()
+              cekData.push(result)
+            }
+          }
+          if (cekData.length > 0) {
+            return response(res, 'success delete user', { result: cekData })
+          } else {
+            return response(res, 'user not found', {}, 404, false)
+          }
         } else {
           return response(res, 'user not found', {}, 404, false)
         }
@@ -280,7 +291,7 @@ module.exports = {
           const dokumen = `assets/masters/${req.files[0].filename}`
           const rows = await readXlsxFile(dokumen)
           const count = []
-          const cek = ['User Name', 'Password', 'Kode Depo', 'Nama Depo', 'User Level']
+          const cek = ['User Name', 'Kode Depo', 'Nama Depo', 'User Level']
           const valid = rows[0]
           for (let i = 0; i < cek.length; i++) {
             if (valid[i] === cek[i]) {
@@ -289,21 +300,22 @@ module.exports = {
           }
           if (count.length === cek.length) {
             const plant = []
-            const user = []
+            const userName = []
             const cek = []
             for (let i = 1; i < rows.length; i++) {
               const a = rows[i]
-              if (a[2] !== '') {
-                plant.push(`Kode depo ${a[2]} dan  User level ${a[4]}`)
-              }
-              user.push(`User Name ${a[0]}`)
+              // const cekLevel = a[4].split('-')
+              // if (cekLevel[0] === '5' || cekLevel[0] === 5) {
+              //   plant.push(`Kode area ${a[1]} dan  User level ${a[3]}`)
+              // }
+              userName.push(`User Name ${a[0]}`)
               cek.push(`${a[0]}`)
             }
             const object = {}
             const result = []
             const obj = {}
 
-            user.forEach(item => {
+            userName.forEach(item => {
               if (!obj[item]) { obj[item] = 0 }
               obj[item] += 1
             })
@@ -327,94 +339,77 @@ module.exports = {
             if (result.length > 0) {
               return response(res, 'there is duplication in your file master', { result }, 404, false)
             } else {
-              const arr = []
-              for (let i = 0; i < rows.length - 1; i++) {
-                const select = await sequelize.query(`SELECT username from users WHERE username='${cek[i]}'`, {
-                  type: QueryTypes.SELECT
-                })
-                await sequelize.query(`DELETE from users WHERE username='${cek[i]}'`, {
-                  type: QueryTypes.DELETE
-                })
-                if (select.length > 0) {
-                  arr.push(select[0])
+              rows.shift()
+              const create = []
+              for (let i = 0; i < rows.length; i++) {
+                const noun = []
+                const process = rows[i]
+                for (let j = 0; j < process.length + 1; j++) {
+                  if (j === 5) {
+                    let str = 'pma12345'
+                    str = await bcrypt.hash(str, await bcrypt.genSalt())
+                    noun.push(str)
+                  } else {
+                    noun.push(process[j])
+                  }
                 }
+                create.push(noun)
               }
-              if (arr.length > 0) {
-                rows.shift()
-                const create = []
-                for (let i = 0; i < rows.length; i++) {
-                  const noun = []
-                  const process = rows[i]
-                  for (let j = 0; j < process.length; j++) {
-                    if (j === 1) {
-                      let str = process[j]
-                      str = await bcrypt.hash(str, await bcrypt.genSalt())
-                      noun.push(str)
-                    } else {
-                      noun.push(process[j])
+              if (create.length > 0) {
+                const arr = []
+                for (let i = 0; i < create.length; i++) {
+                  const dataUser = create[i]
+                  const dataCreate = {
+                    username: dataUser[0],
+                    kode_depo: dataUser[1],
+                    nama_depo: dataUser[2],
+                    user_level: dataUser[3].split('-')[0],
+                    password: dataUser[4]
+                  }
+                  const dataUpdate = {
+                    username: dataUser[0],
+                    kode_depo: dataUser[1],
+                    nama_depo: dataUser[2],
+                    user_level: dataUser[3].split('-')[0]
+                  }
+                  const findUser = await users.findOne({
+                    where: {
+                      username: dataUser[0]
+                    }
+                  })
+                  if (findUser) {
+                    const upUser = await findUser.update(dataUpdate)
+                    if (upUser) {
+                      arr.push(upUser)
+                    }
+                  } else {
+                    const createUser = await users.create(dataCreate)
+                    if (createUser) {
+                      arr.push(createUser)
                     }
                   }
-                  create.push(noun)
                 }
-                const result = await sequelize.query(`INSERT INTO users (username, password, kode_depo, nama_depo, user_level) VALUES ${create.map(a => '(?)').join(',')}`,
-                  {
-                    replacements: create,
-                    type: QueryTypes.INSERT
-                  })
-                if (result) {
+                if (arr.length) {
                   fs.unlink(dokumen, function (err) {
                     if (err) throw err
-                    console.log('success')
+                    console.log('success delete file')
                   })
                   return response(res, 'successfully upload file master')
                 } else {
                   fs.unlink(dokumen, function (err) {
                     if (err) throw err
-                    console.log('success')
+                    console.log('success delete file')
                   })
                   return response(res, 'failed to upload file', {}, 404, false)
                 }
               } else {
-                rows.shift()
-                const create = []
-                for (let i = 0; i < rows.length; i++) {
-                  const noun = []
-                  const process = rows[i]
-                  for (let j = 0; j < process.length; j++) {
-                    if (j === 1) {
-                      let str = process[j]
-                      str = await bcrypt.hash(str, await bcrypt.genSalt())
-                      noun.push(str)
-                    } else {
-                      noun.push(process[j])
-                    }
-                  }
-                  create.push(noun)
-                }
-                const result = await sequelize.query(`INSERT INTO users (username, password, kode_depo, nama_depo, user_level) VALUES ${create.map(a => '(?)').join(',')}`,
-                  {
-                    replacements: create,
-                    type: QueryTypes.INSERT
-                  })
-                if (result) {
-                  fs.unlink(dokumen, function (err) {
-                    if (err) throw err
-                    console.log('success')
-                  })
-                  return response(res, 'successfully upload file master')
-                } else {
-                  fs.unlink(dokumen, function (err) {
-                    if (err) throw err
-                    console.log('success')
-                  })
-                  return response(res, 'failed to upload file', {}, 404, false)
-                }
+                return response(res, 'failed to upload file', {}, 404, false)
               }
             }
           } else {
             fs.unlink(dokumen, function (err) {
               if (err) throw err
-              console.log('success')
+              console.log('success delete file')
             })
             return response(res, 'Failed to upload master file, please use the template provided', {}, 400, false)
           }
@@ -426,6 +421,169 @@ module.exports = {
       return response(res, "You're not super administrator", {}, 404, false)
     }
   },
+  // uploadMasterUser: async (req, res) => {
+  //   const level = req.user.level
+  //   if (level === 1) {
+  //     uploadMaster(req, res, async function (err) {
+  //       try {
+  //         if (err instanceof multer.MulterError) {
+  //           if (err.code === 'LIMIT_UNEXPECTED_FILE' && req.files.length === 0) {
+  //             console.log(err.code === 'LIMIT_UNEXPECTED_FILE' && req.files.length > 0)
+  //             return response(res, 'fieldname doesnt match', {}, 500, false)
+  //           }
+  //           return response(res, err.message, {}, 500, false)
+  //         } else if (err) {
+  //           return response(res, err.message, {}, 401, false)
+  //         }
+  //         const dokumen = `assets/masters/${req.files[0].filename}`
+  //         const rows = await readXlsxFile(dokumen)
+  //         const count = []
+  //         const cek = ['User Name', 'Password', 'Kode Depo', 'Nama Depo', 'User Level']
+  //         const valid = rows[0]
+  //         for (let i = 0; i < cek.length; i++) {
+  //           if (valid[i] === cek[i]) {
+  //             count.push(1)
+  //           }
+  //         }
+  //         if (count.length === cek.length) {
+  //           const plant = []
+  //           const dataUser = []
+  //           const cek = []
+  //           for (let i = 1; i < rows.length; i++) {
+  //             const a = rows[i]
+  //             if (a[2] !== '') {
+  //               plant.push(`Kode depo ${a[2]} dan  User level ${a[4]}`)
+  //             }
+  //             dataUser.push(`User Name ${a[0]}`)
+  //             cek.push(`${a[0]}`)
+  //           }
+  //           const object = {}
+  //           const result = []
+  //           const obj = {}
+
+  //           dataUser.forEach(item => {
+  //             if (!obj[item]) { obj[item] = 0 }
+  //             obj[item] += 1
+  //           })
+
+  //           for (const prop in obj) {
+  //             if (obj[prop] >= 2) {
+  //               result.push(prop)
+  //             }
+  //           }
+
+  //           plant.forEach(item => {
+  //             if (!object[item]) { object[item] = 0 }
+  //             object[item] += 1
+  //           })
+
+  //           for (const prop in object) {
+  //             if (object[prop] >= 2) {
+  //               result.push(prop)
+  //             }
+  //           }
+  //           if (result.length > 0) {
+  //             return response(res, 'there is duplication in your file master', { result }, 404, false)
+  //           } else {
+  //             const arr = []
+  //             for (let i = 0; i < rows.length - 1; i++) {
+  //               const select = await sequelize.query(`SELECT username from users WHERE username='${cek[i]}'`, {
+  //                 type: QueryTypes.SELECT
+  //               })
+  //               await sequelize.query(`DELETE from users WHERE username='${cek[i]}'`, {
+  //                 type: QueryTypes.DELETE
+  //               })
+  //               if (select.length > 0) {
+  //                 arr.push(select[0])
+  //               }
+  //             }
+  //             if (arr.length > 0) {
+  //               rows.shift()
+  //               const create = []
+  //               for (let i = 0; i < rows.length; i++) {
+  //                 const noun = []
+  //                 const process = rows[i]
+  //                 for (let j = 0; j < process.length; j++) {
+  //                   if (j === 1) {
+  //                     let str = process[j]
+  //                     str = await bcrypt.hash(str, await bcrypt.genSalt())
+  //                     noun.push(str)
+  //                   } else {
+  //                     noun.push(process[j])
+  //                   }
+  //                 }
+  //                 create.push(noun)
+  //               }
+  //               const result = await sequelize.query(`INSERT INTO users (username, password, kode_depo, nama_depo, user_level) VALUES ${create.map(a => '(?)').join(',')}`,
+  //                 {
+  //                   replacements: create,
+  //                   type: QueryTypes.INSERT
+  //                 })
+  //               if (result) {
+  //                 fs.unlink(dokumen, function (err) {
+  //                   if (err) throw err
+  //                   console.log('success')
+  //                 })
+  //                 return response(res, 'successfully upload file master')
+  //               } else {
+  //                 fs.unlink(dokumen, function (err) {
+  //                   if (err) throw err
+  //                   console.log('success')
+  //                 })
+  //                 return response(res, 'failed to upload file', {}, 404, false)
+  //               }
+  //             } else {
+  //               rows.shift()
+  //               const create = []
+  //               for (let i = 0; i < rows.length; i++) {
+  //                 const noun = []
+  //                 const process = rows[i]
+  //                 for (let j = 0; j < process.length; j++) {
+  //                   if (j === 1) {
+  //                     let str = process[j]
+  //                     str = await bcrypt.hash(str, await bcrypt.genSalt())
+  //                     noun.push(str)
+  //                   } else {
+  //                     noun.push(process[j])
+  //                   }
+  //                 }
+  //                 create.push(noun)
+  //               }
+  //               const result = await sequelize.query(`INSERT INTO users (username, password, kode_depo, nama_depo, user_level) VALUES ${create.map(a => '(?)').join(',')}`,
+  //                 {
+  //                   replacements: create,
+  //                   type: QueryTypes.INSERT
+  //                 })
+  //               if (result) {
+  //                 fs.unlink(dokumen, function (err) {
+  //                   if (err) throw err
+  //                   console.log('success')
+  //                 })
+  //                 return response(res, 'successfully upload file master')
+  //               } else {
+  //                 fs.unlink(dokumen, function (err) {
+  //                   if (err) throw err
+  //                   console.log('success')
+  //                 })
+  //                 return response(res, 'failed to upload file', {}, 404, false)
+  //               }
+  //             }
+  //           }
+  //         } else {
+  //           fs.unlink(dokumen, function (err) {
+  //             if (err) throw err
+  //             console.log('success')
+  //           })
+  //           return response(res, 'Failed to upload master file, please use the template provided', {}, 400, false)
+  //         }
+  //       } catch (error) {
+  //         return response(res, error.message, {}, 500, false)
+  //       }
+  //     })
+  //   } else {
+  //     return response(res, "You're not super administrator", {}, 404, false)
+  //   }
+  // },
   exportSqlUser: async (req, res) => {
     try {
       const result = await users.findAll()
@@ -467,7 +625,7 @@ module.exports = {
       const level = req.user.level
       if (level === 1) {
         const result = await pic.findAll()
-        const user = await users.findAll()
+        const findUser = await users.findAll()
         if (result) {
           const data = []
           const dataUser = []
@@ -476,7 +634,7 @@ module.exports = {
               data.push(x.pic)
             )
           })
-          user.map(x => {
+          findUser.map(x => {
             return (
               dataUser.push(x.username)
             )
