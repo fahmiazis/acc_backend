@@ -1,3 +1,3 @@
-const str = 'MALINGPING_GT'
+const str = 'P242'
 
-console.log(str.split('~')[str.split('~').length - 1])
+console.log(str.split('-')[0])

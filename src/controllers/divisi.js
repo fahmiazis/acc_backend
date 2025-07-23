@@ -283,7 +283,7 @@ module.exports = {
         const workbook = new excel.Workbook()
         const worksheet = workbook.addWorksheet()
         worksheet.columns = [
-          { header: 'Divisi', key: 'divisi', width: 10 }
+          { header: 'Nama Divisi', key: 'divisi', width: 10 }
         ]
         const cek = worksheet.addRows(result)
         if (cek) {

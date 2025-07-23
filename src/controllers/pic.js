@@ -182,17 +182,28 @@ module.exports = {
   deletePic: async (req, res) => {
     try {
       const level = req.user.level
-      const id = req.params.id
+      const { listId } = req.body
+      console.log(req.body)
       if (level === 1) {
-        const result = await pic.findByPk(id)
-        if (result) {
-          await result.destroy()
-          return response(res, 'succesfully delete pic', { result })
+        if (listId !== undefined && listId.length > 0) {
+          const cekData = []
+          for (let i = 0; i < listId.length; i++) {
+            const result = await pic.findByPk(listId[i])
+            if (result) {
+              await result.destroy()
+              cekData.push(result)
+            }
+          }
+          if (cekData.length > 0) {
+            return response(res, 'success delete pic', { result: cekData })
+          } else {
+            return response(res, 'pic not found', {}, 404, false)
+          }
         } else {
-          return response(res, 'failed delete pic', {}, 404, false)
+          return response(res, 'pic not found', {}, 404, false)
         }
       } else {
-        return response(res, "you're not super administrator", {}, 404, false)
+        return response(res, "You're not super administrator", {}, 404, false)
       }
     } catch (error) {
       return response(res, error.message, {}, 500, false)
