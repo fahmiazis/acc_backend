@@ -3,3 +3,4 @@ assets
 src/config
 .env
 db28072025.sql
+dbnow.sql
