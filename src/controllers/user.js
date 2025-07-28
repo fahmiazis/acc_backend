@@ -359,18 +359,19 @@ module.exports = {
                 const arr = []
                 for (let i = 0; i < create.length; i++) {
                   const dataUser = create[i]
+                  const dataLevel = dataUser[3] !== null && dataUser[3] !== undefined && typeof dataUser[3] === 'string' ? dataUser[3].split('-')[0] : dataUser[3]
                   const dataCreate = {
                     username: dataUser[0],
                     kode_depo: dataUser[1],
                     nama_depo: dataUser[2],
-                    user_level: dataUser[3].split('-')[0],
+                    user_level: dataLevel,
                     password: dataUser[4]
                   }
                   const dataUpdate = {
                     username: dataUser[0],
                     kode_depo: dataUser[1],
                     nama_depo: dataUser[2],
-                    user_level: dataUser[3].split('-')[0]
+                    user_level: dataLevel
                   }
                   const findUser = await users.findOne({
                     where: {
