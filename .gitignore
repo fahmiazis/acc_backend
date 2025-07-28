@@ -2,3 +2,4 @@ node_modules
 assets
 src/config
 .env
+db28072025.sql
