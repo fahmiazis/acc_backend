@@ -436,7 +436,7 @@ module.exports = {
               if (err) throw err
               console.log('success')
             })
-            return response(res, 'Failed to upload master file, please use the template provided', {}, 400, false)
+            return response(res, 'Gagal upload file master, mohon gunakan template upload yang telah disediakan', {}, 400, false)
           }
         } catch (error) {
           return response(res, error.message, {}, 500, false)
