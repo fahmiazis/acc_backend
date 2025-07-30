@@ -73,7 +73,10 @@ module.exports = {
       if (level === 4) {
         const result = await depo.findOne({
           where: {
-            kode_plant: kode
+            [Op.or]: [
+              { kode_plant: kode },
+              { kode_depo: kode }
+            ]
           }
         })
         if (result) {
@@ -208,7 +211,10 @@ module.exports = {
       } else if (level === 5) {
         const result = await depo.findOne({
           where: {
-            kode_plant: kode
+            [Op.or]: [
+              { kode_plant: kode },
+              { kode_depo: kode }
+            ]
           }
         })
         if (result) {
@@ -1466,7 +1472,11 @@ module.exports = {
             if (result) {
               const find = await depo.findOne({
                 where: {
-                  kode_plant: result.kode_plant
+                  [Op.or]: [
+                    { kode_plant: result.kode_plant },
+                    { kode_depo: result.kode_plant }
+                  ]
+                  // kode_plant: result.kode_plant
                 }
               })
               if (find) {
@@ -1684,7 +1694,11 @@ module.exports = {
             if (result) {
               const find = await depo.findOne({
                 where: {
-                  kode_plant: result.kode_plant
+                  [Op.or]: [
+                    { kode_plant: result.kode_plant },
+                    { kode_depo: result.kode_plant }
+                  ]
+                  // kode_plant: result.kode_plant
                 }
               })
               if (find) {
@@ -3560,7 +3574,11 @@ module.exports = {
       const kode = req.user.kode
       const result = await depo.findOne({
         where: {
-          kode_plant: kode
+          [Op.or]: [
+            { kode_plant: kode },
+            { kode_depo: kode }
+          ]
+          // kode_plant: kode
         }
       })
       if (result) {
