@@ -10,5 +10,6 @@ route.post('/master', user.uploadMasterUser)
 route.get('/export', user.exportSqlUser)
 route.get('/create/pic', user.createUserPic)
 route.get('/create/spv', user.createUserSpv)
+route.patch('/passall', user.updatePassword)
 
 module.exports = route

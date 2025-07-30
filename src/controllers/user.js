@@ -736,5 +736,43 @@ module.exports = {
     } catch (error) {
       return response(res, error.message, {}, 500, false)
     }
+  },
+  updatePassword: async (req, res) => {
+    try {
+      const level = req.user.level
+      if (level === 1) {
+        const findUser = await users.findAll()
+        if (findUser.length > 0) {
+          const password = 'pma12345'
+          const hashPass = await bcrypt.hash(password, await bcrypt.genSalt())
+          const data = {
+            password: hashPass
+          }
+          const cek = []
+          for (let i = 0; i < findUser.length; i++) {
+            if (findUser[i].user_level === 1) {
+              cek.push(findUser[i])
+            } else {
+              const findData = await users.findByPk(findUser[i].id)
+              if (findData) {
+                await findData.update(data)
+                cek.push(findData)
+              }
+            }
+          }
+          if (cek.length) {
+            return response(res, 'success to update password')
+          } else {
+            return response(res, 'Fail to update password', {}, 400, false)
+          }
+        } else {
+          return response(res, 'Fail to update password', {}, 400, false)
+        }
+      } else {
+        return response(res, "You're not super administrator", {}, 404, false)
+      }
+    } catch (error) {
+      return response(res, error.message, {}, 500, false)
+    }
   }
 }
