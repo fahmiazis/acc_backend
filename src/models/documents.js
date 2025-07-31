@@ -18,7 +18,8 @@ module.exports = (sequelize, DataTypes) => {
     jenis_dokumen: DataTypes.ENUM('daily', 'monthly'),
     postDokumen: DataTypes.DATE,
     divisi: DataTypes.STRING,
-    status_depo: DataTypes.ENUM('Cabang SAP', 'Cabang Scylla', 'Depo SAP', 'Depo Scylla'),
+    // status_depo: DataTypes.ENUM('Cabang SAP', 'Cabang Scylla', 'Depo SAP', 'Depo Scylla'),
+    status_depo: DataTypes.STRING,
     uploadedBy: DataTypes.ENUM('sa', 'kasir'),
     status: DataTypes.ENUM('active', 'inactive'),
     access: DataTypes.TEXT
