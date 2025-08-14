@@ -10,7 +10,7 @@ const uploadMaster = require('../helpers/uploadMaster')
 const fs = require('fs')
 const excel = require('exceljs')
 const vs = require('fs-extra')
-const { APP_URL } = process.env
+const { APP_BE } = process.env
 
 module.exports = {
   addDocument: async (req, res) => {
@@ -557,7 +557,7 @@ module.exports = {
             }
             console.log('success')
           })
-          return response(res, 'success', { link: `${APP_URL}/download/${name}` })
+          return response(res, 'success', { link: `${APP_BE}/download/${name}` })
         } else {
           return response(res, 'failed create file', {}, 404, false)
         }
