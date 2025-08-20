@@ -377,6 +377,7 @@ module.exports = {
           if (depos.length > 0) {
             const sa = []
             const kasir = []
+            const all = []
             if (tipeValue === 'monthly') {
               now = new Date(moment(timeValue).startOf('month').format('YYYY-MM-DD'))
               tomo = new Date(moment(timeValue).endOf('month').format('YYYY-MM-DD'))
@@ -428,6 +429,9 @@ module.exports = {
               })
               if (result) {
                 sa.push(result.rows[0])
+                if (result.rows[0] !== null && result.rows[0] !== undefined) {
+                  all.push(result.rows[0])
+                }
               }
             }
             for (let i = 0; i < depos.length; i++) {
@@ -477,12 +481,15 @@ module.exports = {
               })
               if (result) {
                 kasir.push(result.rows[0])
+                if (result.rows[0] !== null && result.rows[0] !== undefined) {
+                  all.push(result.rows[0])
+                }
               }
             }
             if (sa.length > 0 || kasir.length > 0) {
-              return response(res, 'list dokumen', { results, sa, kasir, pageInfo })
+              return response(res, 'list dokumen', { results, sa, kasir, all, pageInfo })
             } else {
-              return response(res, 'list dokumen', { results, sa, kasir, pageInfo })
+              return response(res, 'list dokumen', { results, sa, kasir, all, pageInfo })
             }
           } else {
             return response(res, 'depo no found', {}, 404, false)
@@ -523,6 +530,7 @@ module.exports = {
           if (depos.length > 0) {
             const sa = []
             const kasir = []
+            const all = []
             if (tipeValue === 'monthly') {
               now = new Date(moment(timeValue).startOf('month').format('YYYY-MM-DD'))
               tomo = new Date(moment(timeValue).endOf('month').format('YYYY-MM-DD'))
@@ -574,6 +582,9 @@ module.exports = {
               })
               if (result) {
                 sa.push(result.rows[0])
+                if (result.rows[0] !== null && result.rows[0] !== undefined) {
+                  all.push(result.rows[0])
+                }
               }
             }
             for (let i = 0; i < depos.length; i++) {
@@ -623,12 +634,15 @@ module.exports = {
               })
               if (result) {
                 kasir.push(result.rows[0])
+                if (result.rows[0] !== null && result.rows[0] !== undefined) {
+                  all.push(result.rows[0])
+                }
               }
             }
             if (sa.length > 0 || kasir.length > 0) {
-              return response(res, 'list dokumen', { results, sa, kasir, pageInfo })
+              return response(res, 'list dokumen', { results, sa, kasir, all, pageInfo })
             } else {
-              return response(res, 'list dokumen', { results, sa, kasir, pageInfo })
+              return response(res, 'list dokumen', { results, sa, kasir, all, pageInfo })
             }
           } else {
             return response(res, 'depo no found', {}, 404, false)
@@ -668,6 +682,7 @@ module.exports = {
           if (depos.length > 0) {
             const sa = []
             const kasir = []
+            const all = []
             if (tipeValue === 'monthly') {
               now = new Date(moment(timeValue).startOf('month').format('YYYY-MM-DD'))
               tomo = new Date(moment(timeValue).endOf('month').format('YYYY-MM-DD'))
@@ -719,6 +734,9 @@ module.exports = {
               })
               if (result) {
                 sa.push(result.rows[0])
+                if (result.rows[0] !== null && result.rows[0] !== undefined) {
+                  all.push(result.rows[0])
+                }
               }
             }
             for (let i = 0; i < depos.length; i++) {
@@ -768,12 +786,15 @@ module.exports = {
               })
               if (result) {
                 kasir.push(result.rows[0])
+                if (result.rows[0] !== null && result.rows[0] !== undefined) {
+                  all.push(result.rows[0])
+                }
               }
             }
             if (sa.length > 0 || kasir.length > 0) {
-              return response(res, 'list dokumen', { results, sa, kasir, pageInfo })
+              return response(res, 'list dokumen', { results, sa, kasir, all, pageInfo })
             } else {
-              return response(res, 'list dokumen', { results, sa, kasir, pageInfo })
+              return response(res, 'list dokumen', { results, sa, kasir, all, pageInfo })
             }
           } else {
             return response(res, 'depo no found', {}, 404, false)
