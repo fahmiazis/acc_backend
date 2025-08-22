@@ -367,18 +367,19 @@ module.exports = {
                     user_level: dataLevel,
                     password: dataUser[4]
                   }
-                  const dataUpdate = {
-                    username: dataUser[0],
-                    kode_depo: dataUser[1],
-                    nama_depo: dataUser[2],
-                    user_level: dataLevel
-                  }
                   const findUser = await users.findOne({
                     where: {
                       username: dataUser[0]
                     }
                   })
                   if (findUser) {
+                    const dataUpdate = {
+                      username: dataUser[0],
+                      kode_depo: dataUser[1],
+                      nama_depo: dataUser[2],
+                      user_level: dataLevel,
+                      password: findUser.password
+                    }
                     const upUser = await findUser.update(dataUpdate)
                     if (upUser) {
                       arr.push(upUser)
