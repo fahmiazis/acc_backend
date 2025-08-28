@@ -68,8 +68,8 @@ module.exports = {
       const kode = req.user.kode
       let timeUser = new Date(moment().format('YYYY-MM-DD 00:00'))
       let timeUserTomo = new Date(moment().add(1, 'days').format('YYYY-MM-DD 00:00'))
-      let now = timeValue === '' ? new Date(moment().format('YYYY-MM-DD')) : new Date(moment(timeValue).format('YYYY-MM-DD'))
-      let tomo = timeValue === '' ? new Date(moment().add(1, 'days').format('YYYY-MM-DD')) : new Date(moment(timeValue).add(1, 'days').format('YYYY-MM-DD'))
+      let now = timeValue ? moment(timeValue).startOf('day').toDate() : moment().startOf('day').toDate()
+      let tomo = timeValue ? moment(timeValue).add(1, 'days').startOf('day').toDate() : moment().add(1, 'days').startOf('day').toDate()
       if (level === 4) {
         const result = await depo.findOne({
           where: {
