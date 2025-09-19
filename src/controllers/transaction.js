@@ -12,6 +12,7 @@ const { APP_URL } = process.env
 const moment = require('moment')
 const xlsx = require('xlsx')
 const wrapMail = require('../helpers/wrapMail')
+const { fn, col } = require('sequelize')
 
 const buildFilter = async (level, results, depoKode, names) => {
   if (level === 1 || level === 2 || level === 3) {
@@ -3252,9 +3253,13 @@ module.exports = {
       const filters = await buildFilter(level, results, depoKode, req.user.name)
 
       // 🔎 query dokumen untuk header
-      const dokumenNames = (await documents.findAll({
-        where: { jenis_dokumen: { [Op.like]: `%${tipeValue}%` } }
-      })).map(d => d.nama_dokumen)
+      const dokumenRows = await documents.findAll({
+        attributes: [[fn('DISTINCT', col('nama_dokumen')), 'nama_dokumen']],
+        where: { jenis_dokumen: { [Op.like]: `%${tipeValue}%` } },
+        order: [[fn('LOWER', col('nama_dokumen')), 'ASC']],
+        raw: true
+      })
+      const dokumenNames = dokumenRows.map(r => r.nama_dokumen)
 
       // 🔎 query utama
       const sa = await depo.findAll({
