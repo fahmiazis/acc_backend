@@ -13,6 +13,63 @@ const moment = require('moment')
 const xlsx = require('xlsx')
 const wrapMail = require('../helpers/wrapMail')
 
+const buildFilter = (level, results, depoKode, names) => {
+  if (level === 1 || level === 2 || level === 3) {
+    if (results.pic && results.pic !== 'all') {
+      return { pic: results.pic }
+    }
+    if (results.kode_plant && results.kode_plant !== 'all') {
+      return { kode_plant: results.kode_plant }
+    }
+    if (results.spv) {
+      return { spv: results.spv }
+    }
+    return {} // ambil semua kalau kosong
+  }
+
+  if (level === 4 || level === 5) {
+    return { kode_plant: depoKode }
+  }
+
+  return {}
+}
+
+const buildHeader = (dokumenNames) => {
+  const first = ['No', 'Nama Depo', 'Kode Plant', 'Profit Center', 'Kode SAP 1', 'Status Depo']
+  const last = ['Jumlah Dokumen', 'Progress', 'Persentase']
+  return first.concat(dokumenNames, last)
+}
+
+const buildBody = (sa, dokumenNames) => {
+  return sa.map((item, index) => {
+    const row = []
+    row.push(index + 1)
+    row.push(item.nama_depo)
+    row.push(item.kode_plant)
+    row.push(item.profit_center)
+    row.push(item.kode_sap_1)
+    row.push(item.status_depo)
+
+    for (const nama of dokumenNames) {
+      const docMatch = item.active?.[0]?.doc?.find(d => d.dokumen === nama)
+      if (docMatch) {
+        row.push(docMatch.status_dokumen === 3 ? moment(docMatch.createdAt).format('LLL') //eslint-disable-line
+          : docMatch.status_dokumen === 5 ? `Telat (${moment(docMatch.createdAt).format('LLL')})` //eslint-disable-line
+            : '-')
+      } else {
+        row.push('-')
+      }
+    }
+
+    const totalDoc = item.dokumen?.length || 0
+    const progress = item.active?.[0]?.progress || 0
+    const percent = totalDoc > 0 ? `${Math.round((progress / totalDoc) * 100)}%` : '0%'
+
+    row.push(totalDoc, progress, percent)
+    return row
+  })
+}
+
 module.exports = {
   getDashboard: async (req, res) => {
     try {
@@ -1916,7 +1973,7 @@ module.exports = {
       return response(res, error.message, {}, 500, false)
     }
   },
-  reportDokumen: async (req, res) => {
+  reportDokumenOld: async (req, res) => {
     // try {
     const level = req.user.level
     const depoKode = req.user.kode
@@ -3162,6 +3219,68 @@ module.exports = {
     // } catch (error) {
     //   return response(res, error.message, {}, 500, false)
     // }
+  },
+  reportDokumen: async (req, res) => {
+    try {
+      const level = req.user.level
+      const depoKode = req.user.kode
+      const { from, to, tipe } = req.query
+
+      const timeFrom = from ? moment(from).startOf('day').toDate() : moment().startOf('day').toDate()
+      const timeTo = to ? moment(to).endOf('day').toDate() : moment().endOf('day').toDate()
+      const tipeValue = tipe || 'daily'
+
+      const schema = joi.object({
+        kode_plant: joi.string().allow(''),
+        pic: joi.string().allow(''),
+        spv: joi.string().allow('')
+      })
+      const { value: results, error } = schema.validate(req.body)
+      if (error) {
+        return response(res, 'Error', { error: error.message }, 400, false)
+      }
+
+      // 🔑 bangun filter sesuai level & kondisi
+      const filters = buildFilter(level, results, depoKode, req.user.name)
+
+      // 🔎 query dokumen untuk header
+      const dokumenNames = (await documents.findAll({
+        where: { jenis_dokumen: { [Op.like]: `%${tipeValue}%` } }
+      })).map(d => d.nama_dokumen)
+
+      // 🔎 query utama
+      const sa = await depo.findAll({
+        where: filters,
+        include: [
+          {
+            model: activity,
+            as: 'active',
+            where: {
+              jenis_dokumen: { [Op.like]: `%${tipeValue}%` },
+              createdAt: { [Op.between]: [timeFrom, timeTo] }
+            },
+            include: [{ model: Path, as: 'doc' }]
+          },
+          {
+            model: documents,
+            as: 'dokumen',
+            where: { jenis_dokumen: { [Op.like]: `%${tipeValue}%` } }
+          }
+        ]
+      })
+
+      if (!sa.length) {
+        return response(res, 'Data not found', {}, 404, false)
+      }
+
+      // ✨ bentuk header & body
+      const header = buildHeader(dokumenNames)
+      const body = buildBody(sa, dokumenNames)
+
+      return response(res, 'success', { data: [header, ...body] })
+    } catch (err) {
+      return response(res, err.message, {}, 500, false)
+    }
   },
   getNotif: async (req, res) => {
     try {
