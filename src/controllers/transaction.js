@@ -13,18 +13,26 @@ const moment = require('moment')
 const xlsx = require('xlsx')
 const wrapMail = require('../helpers/wrapMail')
 
-const buildFilter = (level, results, depoKode, names) => {
+const buildFilter = async (level, results, depoKode, names) => {
   if (level === 1 || level === 2 || level === 3) {
     if (results.pic && results.pic !== 'all') {
-      return { pic: results.pic }
+      const picRecords = await pic.findAll({
+        where: { pic: { [Op.like]: `%${results.pic}%` } }
+      })
+      const kodeDepos = picRecords.map(p => p.kode_depo)
+      return { kode_plant: { [Op.in]: kodeDepos } }
     }
     if (results.kode_plant && results.kode_plant !== 'all') {
       return { kode_plant: results.kode_plant }
     }
     if (results.spv) {
-      return { spv: results.spv }
+      const picRecords = await pic.findAll({
+        where: { spv: { [Op.like]: `%${results.spv}%` } }
+      })
+      const kodeDepos = picRecords.map(p => p.kode_depo)
+      return { kode_plant: { [Op.in]: kodeDepos } }
     }
-    return {} // ambil semua kalau kosong
+    return {}
   }
 
   if (level === 4 || level === 5) {
@@ -3241,7 +3249,7 @@ module.exports = {
       }
 
       // 🔑 bangun filter sesuai level & kondisi
-      const filters = buildFilter(level, results, depoKode, req.user.name)
+      const filters = await buildFilter(level, results, depoKode, req.user.name)
 
       // 🔎 query dokumen untuk header
       const dokumenNames = (await documents.findAll({
