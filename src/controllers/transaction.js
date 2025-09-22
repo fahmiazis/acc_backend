@@ -61,19 +61,7 @@ const buildBody = (sa, dokumenNames) => {
   const rows = []
 
   sa.forEach((item, index) => {
-    // Buat map dokumen untuk progress unik
-    const docProgressMap = {}
-    item.active?.forEach(act => {
-      act.doc?.forEach(d => {
-        if (d.status_dokumen === 3 || d.status_dokumen === 5) {
-          docProgressMap[d.dokumen] = true // hanya dihitung sekali per dokumen
-        }
-      })
-    })
-
-    const totalDoc = dokumenNames.length // total dokumen unik per depo
-    const progressCount = Object.keys(docProgressMap).length // jumlah dokumen selesai/telat unik
-    const percent = totalDoc > 0 ? `${Math.round((progressCount / totalDoc) * 100)}%` : '0%'
+    const totalDoc = dokumenNames.length // total dokumen per depo
 
     if (item.active?.length) {
       item.active.forEach((act, idx) => {
@@ -86,9 +74,14 @@ const buildBody = (sa, dokumenNames) => {
         row.push(item.kode_sap_1)
         row.push(item.status_depo)
 
+        let progress = 0
+
         for (const nama of dokumenNames) {
           const docMatch = act.doc?.find(d => d.dokumen === nama)
           if (docMatch) {
+            if (docMatch.status_dokumen === 3 || docMatch.status_dokumen === 5) {
+              progress++ // dihitung tiap activity
+            }
             row.push(
               docMatch.status_dokumen === 3
                 ? moment(docMatch.createdAt).format('LLL')
@@ -101,10 +94,13 @@ const buildBody = (sa, dokumenNames) => {
           }
         }
 
-        row.push(totalDoc, progressCount, percent)
+        const percent = totalDoc > 0 ? `${Math.round((progress / totalDoc) * 100)}%` : '0%'
+        row.push(totalDoc, progress, percent)
+
         rows.push(row)
       })
     } else {
+      // activity kosong
       const row = []
       row.push(index + 1)
       row.push('-')
@@ -118,7 +114,7 @@ const buildBody = (sa, dokumenNames) => {
         row.push('-')
       }
 
-      row.push(totalDoc, 0, '0%') // kalau nggak ada activity
+      row.push(totalDoc, 0, '0%')
       rows.push(row)
     }
   })
