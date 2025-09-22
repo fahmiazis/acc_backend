@@ -61,14 +61,11 @@ const buildBody = (sa, dokumenNames) => {
   const rows = []
 
   sa.forEach((item, index) => {
-    const totalDoc = item.dokumen?.length || 0
-
-    // hitung progress total (selesai + telat)
+    const totalDoc = dokumenNames.length // total dokumen per depo
     const progressCount = item.active?.reduce((sum, act) => {
       const done = act.doc?.filter(d => d.status_dokumen === 3 || d.status_dokumen === 5).length || 0
       return sum + done
     }, 0) || 0
-
     const percent = totalDoc > 0 ? `${Math.round((progressCount / totalDoc) * 100)}%` : '0%'
 
     if (item.active?.length) {
