@@ -3318,7 +3318,7 @@ module.exports = {
                     'status_dokumen', doc.status_dokumen,
                     'createdAt', doc.createdAt
                   ))
-                  FROM paths doc
+                  FROM Paths doc
                   WHERE doc.activityId = a.id
                 )
               )
