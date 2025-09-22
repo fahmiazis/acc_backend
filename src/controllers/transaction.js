@@ -1,5 +1,5 @@
 const { pagination } = require('../helpers/pagination')
-const { documents, Path, depo, activity, pic, email, notif, date_clossing } = require('../models') // eslint-disable-line
+const { documents, Path, depo, activity, pic, email, notif, date_clossing, sequelize } = require('../models') // eslint-disable-line
 const { Op } = require('sequelize')
 const response = require('../helpers/response')
 const joi = require('joi')
@@ -3272,12 +3272,11 @@ module.exports = {
   },
   reportDokumen: async (req, res) => {
     try {
-      const level = req.user.level
-      const depoKode = req.user.kode
+      const { level, kode: depoKode } = req.user
       const { from, to, tipe } = req.query
 
-      const timeFrom = from ? moment(from).startOf('day').toDate() : moment().startOf('day').toDate()
-      const timeTo = to ? moment(to).endOf('day').toDate() : moment().endOf('day').toDate()
+      const timeFrom = from ? moment(from).startOf('day').format('YYYY-MM-DD HH:mm:ss') : moment().startOf('day').format('YYYY-MM-DD HH:mm:ss')
+      const timeTo = to ? moment(to).endOf('day').format('YYYY-MM-DD HH:mm:ss') : moment().endOf('day').format('YYYY-MM-DD HH:mm:ss')
       const tipeValue = tipe || 'daily'
 
       const schema = joi.object({
@@ -3286,47 +3285,69 @@ module.exports = {
         spv: joi.string().allow('')
       })
       const { value: results, error } = schema.validate(req.body)
-      if (error) {
-        return response(res, 'Error', { error: error.message }, 400, false)
+      if (error) return response(res, 'Error', { error: error.message }, 400, false)
+
+      // 🔑 build filter depo sesuai level
+      let filters = ''
+      if ([1, 2, 3].includes(level)) {
+        const conditions = []
+        if (results.pic && results.pic !== 'all') conditions.push(`p.pic LIKE '%${results.pic}%'`)
+        if (results.spv && results.spv !== '') conditions.push(`p.spv LIKE '%${results.spv}%'`)
+        if (results.kode_plant && results.kode_plant !== 'all') conditions.push(`d.kode_plant = '${results.kode_plant}'`)
+        filters = conditions.length ? 'WHERE ' + conditions.join(' OR ') : ''
+      } else if ([4, 5].includes(level)) {
+        filters = `WHERE d.kode_plant = '${depoKode}'`
       }
 
-      // 🔑 filter depo sesuai level
-      const filters = await buildFilter(level, results, depoKode, req.user.name)
+      // 🔎 raw SQL MySQL dengan JSON aggregation
+      const query = `
+        SELECT 
+          d.nama_depo,
+          d.kode_plant,
+          d.profit_center,
+          d.kode_sap_1,
+          d.status_depo,
+          (
+            SELECT JSON_ARRAYAGG(
+              JSON_OBJECT(
+                'createdAt', a.createdAt,
+                'progress', a.progress,
+                'doc', (
+                  SELECT JSON_ARRAYAGG(JSON_OBJECT(
+                    'dokumen', doc.dokumen,
+                    'status_dokumen', doc.status_dokumen,
+                    'createdAt', doc.createdAt
+                  ))
+                  FROM path doc
+                  WHERE doc.activityId = a.id
+                )
+              )
+            )
+            FROM activity a
+            WHERE a.depoId = d.id 
+              AND a.jenis_dokumen = '${tipeValue}'
+              AND a.createdAt BETWEEN '${timeFrom}' AND '${timeTo}'
+          ) AS active,
+          (
+            SELECT JSON_ARRAYAGG(dok.nama_dokumen)
+            FROM documents dok
+            WHERE dok.depoId = d.id 
+              AND dok.jenis_dokumen = '${tipeValue}'
+          ) AS dokumen_names
+        FROM depo d
+        LEFT JOIN pic p ON p.kode_depo = d.kode_plant
+        ${filters}
+        ORDER BY d.nama_depo ASC
+      `
 
-      // 🔎 ambil nama dokumen unik
-      const dokumenRows = await documents.findAll({
-        attributes: [[fn('DISTINCT', col('nama_dokumen')), 'nama_dokumen']],
-        where: { jenis_dokumen: { [Op.like]: `%${tipeValue}%` } },
-        order: [[fn('LOWER', col('nama_dokumen')), 'ASC']],
-        raw: true
-      })
-      const dokumenNames = dokumenRows.map(r => r.nama_dokumen)
+      const sa = await sequelize.query(query, { type: sequelize.QueryTypes.SELECT })
 
-      // 🔎 query utama
-      const sa = await depo.findAll({
-        where: filters,
-        include: [
-          {
-            model: activity,
-            as: 'active',
-            required: false, // ⬅️ penting: jangan cut data
-            where: {
-              jenis_dokumen: { [Op.like]: `%${tipeValue}%` },
-              createdAt: { [Op.between]: [timeFrom, timeTo] }
-            },
-            include: [{ model: Path, as: 'doc' }]
-          },
-          {
-            model: documents,
-            as: 'dokumen',
-            where: { jenis_dokumen: { [Op.like]: `%${tipeValue}%` } }
-          }
-        ]
-      })
+      if (!sa.length) return response(res, 'Data not found', {}, 404, false)
 
-      if (!sa.length) {
-        return response(res, 'Data not found', {}, 404, false)
-      }
+      // 🔎 ambil dokumen unik dari semua depo
+      const dokumenSet = new Set()
+      sa.forEach(item => item.dokumen_names?.forEach(n => dokumenSet.add(n)))
+      const dokumenNames = Array.from(dokumenSet).sort()
 
       const header = buildHeader(dokumenNames)
       const body = buildBody(sa, dokumenNames)
