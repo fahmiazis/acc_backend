@@ -3334,7 +3334,7 @@ module.exports = {
             WHERE dok.depoId = d.id 
               AND dok.jenis_dokumen = '${tipeValue}'
           ) AS dokumen_names
-        FROM depo d
+        FROM depos d
         LEFT JOIN pic p ON p.kode_depo = d.kode_plant
         ${filters}
         ORDER BY d.nama_depo ASC
