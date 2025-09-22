@@ -3287,7 +3287,7 @@ module.exports = {
       const { value: results, error } = schema.validate(req.body)
       if (error) return response(res, 'Error', { error: error.message }, 400, false)
 
-      // 🔑 build filter depo sesuai level
+      // 🔑 build filter sesuai level
       let filters = ''
       if ([1, 2, 3].includes(level)) {
         const conditions = []
@@ -3299,7 +3299,7 @@ module.exports = {
         filters = `WHERE d.kode_plant = '${depoKode}'`
       }
 
-      // 🔎 raw SQL MySQL dengan JSON aggregation
+      // 🔎 query MySQL
       const query = `
         SELECT 
           d.nama_depo,
@@ -3319,20 +3319,20 @@ module.exports = {
                     'createdAt', doc.createdAt
                   ))
                   FROM Paths doc
-                  WHERE doc.activityId = a.id
+                  WHERE doc.kode_plant = d.kode_plant AND doc.activity_kode = a.kode_activity
                 )
               )
             )
             FROM activities a
-            WHERE a.depoId = d.id 
+            WHERE a.kode_plant = d.kode_plant
               AND a.jenis_dokumen = '${tipeValue}'
               AND a.createdAt BETWEEN '${timeFrom}' AND '${timeTo}'
           ) AS active,
           (
-            SELECT JSON_ARRAYAGG(dok.nama_dokumen)
-            FROM documents dok
-            WHERE dok.depoId = d.id 
-              AND dok.jenis_dokumen = '${tipeValue}'
+            SELECT JSON_ARRAYAGG(doc.nama_dokumen)
+            FROM documents doc
+            WHERE doc.kode_plant = d.kode_plant
+              AND doc.jenis_dokumen = '${tipeValue}'
           ) AS dokumen_names
         FROM depos d
         LEFT JOIN pics p ON p.kode_depo = d.kode_plant
@@ -3344,7 +3344,7 @@ module.exports = {
 
       if (!sa.length) return response(res, 'Data not found', {}, 404, false)
 
-      // 🔎 ambil dokumen unik dari semua depo
+      // 🔎 ambil dokumen unik
       const dokumenSet = new Set()
       sa.forEach(item => item.dokumen_names?.forEach(n => dokumenSet.add(n)))
       const dokumenNames = Array.from(dokumenSet).sort()
