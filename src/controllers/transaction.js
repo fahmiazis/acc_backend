@@ -3303,7 +3303,7 @@ module.exports = {
         filterClause = `WHERE d.kode_plant = '${depoKode}'`
       }
 
-      // 🔎 Raw SQL dengan JSON_ARRAYAGG sesuai relasi Sequelize asli
+      // 🔎 Raw SQL fix sesuai schema dan relasi Sequelize
       const query = `
         SELECT 
           d.nama_depo,
@@ -3317,11 +3317,13 @@ module.exports = {
                 'createdAt', a.createdAt,
                 'progress', a.progress,
                 'doc', (
-                  SELECT JSON_ARRAYAGG(JSON_OBJECT(
-                    'dokumen', doc.dokumen,
-                    'status_dokumen', doc.status_dokumen,
-                    'createdAt', doc.createdAt
-                  ))
+                  SELECT JSON_ARRAYAGG(
+                    JSON_OBJECT(
+                      'dokumen', doc.dokumen,
+                      'status_dokumen', doc.status_dokumen,
+                      'createdAt', doc.createdAt
+                    )
+                  )
                   FROM Paths doc
                   WHERE doc.activityId = a.id
                 )
@@ -3335,7 +3337,7 @@ module.exports = {
           (
             SELECT JSON_ARRAYAGG(doc.nama_dokumen)
             FROM documents doc
-            WHERE doc.kode_plant = d.kode_plant
+            WHERE doc.status_depo = d.status_depo
               AND doc.jenis_dokumen = '${tipeValue}'
           ) AS dokumen_names
         FROM depos d
