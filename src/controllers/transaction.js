@@ -3303,7 +3303,7 @@ module.exports = {
         filterClause = `WHERE d.kode_plant = '${depoKode}'`
       }
 
-      // 🔎 raw SQL MySQL dengan JSON_ARRAYAGG sesuai relasi kode asli
+      // 🔎 raw SQL MySQL dengan JSON_ARRAYAGG, Paths hanya pakai kode_activity
       const query = `
         SELECT 
           d.nama_depo,
@@ -3323,8 +3323,7 @@ module.exports = {
                     'createdAt', doc.createdAt
                   ))
                   FROM Paths doc
-                  WHERE doc.kode_plant = d.kode_plant
-                    AND doc.kode_activity = a.kode_activity
+                  WHERE doc.kode_activity = a.kode_activity
                 )
               )
             )
