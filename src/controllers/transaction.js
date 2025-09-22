@@ -3293,21 +3293,38 @@ module.exports = {
       const { value: results, error } = schema.validate(req.body)
       if (error) return response(res, 'Error', { error: error.message }, 400, false)
 
-      // 🔑 Build filter
+      // build replacements & filter safely
+      const replacements = {
+        tipeValue,
+        timeFrom,
+        timeTo,
+        jenisPattern: `%${tipeValue}%`
+      }
+
       let filterClause = ''
       if ([1, 2, 3].includes(level)) {
         const conditions = []
-        if (results.pic && results.pic !== 'all') conditions.push(`p.pic LIKE '%${results.pic}%'`)
-        if (results.spv && results.spv !== '') conditions.push(`p.spv LIKE '%${results.spv}%'`)
-        if (results.kode_plant && results.kode_plant !== 'all') conditions.push(`d.kode_plant = '${results.kode_plant}'`)
+        if (results.pic && results.pic !== 'all') {
+          conditions.push('p.pic LIKE :picLike')
+          replacements.picLike = `%${results.pic}%`
+        }
+        if (results.spv && results.spv !== '') {
+          conditions.push('p.spv LIKE :spvLike')
+          replacements.spvLike = `%${results.spv}%`
+        }
+        if (results.kode_plant && results.kode_plant !== 'all') {
+          conditions.push('d.kode_plant = :kodePlant')
+          replacements.kodePlant = results.kode_plant
+        }
         filterClause = conditions.length ? 'WHERE ' + conditions.join(' OR ') : ''
       } else if ([4, 5].includes(level)) {
-        filterClause = `WHERE d.kode_plant = '${depoKode}'`
+        filterClause = 'WHERE d.kode_plant = :depoKode'
+        replacements.depoKode = depoKode
       }
 
-      // 🔎 Ambil data flat sekaligus
-      const rows = await sequelize.query(
-        `SELECT
+      // RAW flat query — note: pics alias = p, Paths alias = path (tidak memakai p.dokumen)
+      const mainQuery = `
+        SELECT
           d.kode_plant,
           d.nama_depo,
           d.profit_center,
@@ -3316,47 +3333,53 @@ module.exports = {
           a.id AS activity_id,
           a.createdAt AS activity_date,
           a.progress AS activity_progress,
-          p.dokumen,
-          p.status_dokumen,
-          p.createdAt AS dokumen_created
+          path.dokumen AS dokumen,
+          path.status_dokumen AS status_dokumen,
+          path.createdAt AS dokumen_created
         FROM depos d
         LEFT JOIN pics p ON p.kode_depo = d.kode_plant
-        LEFT JOIN activities a 
-              ON a.kode_plant = d.kode_plant
-              AND a.jenis_dokumen = '${tipeValue}'
-              AND a.createdAt BETWEEN '${timeFrom}' AND '${timeTo}'
-        LEFT JOIN Paths p2 ON p2.activityId = a.id
+        LEFT JOIN activities a
+          ON a.kode_plant = d.kode_plant
+          AND a.jenis_dokumen = :tipeValue
+          AND a.createdAt BETWEEN :timeFrom AND :timeTo
+          AND a.progress > 0
+        LEFT JOIN Paths path ON path.activityId = a.id
         ${filterClause}
-        ORDER BY d.nama_depo ASC, a.createdAt ASC`,
-        { type: sequelize.QueryTypes.SELECT }
-      )
+        ORDER BY d.nama_depo ASC, a.createdAt ASC
+      `
+
+      const rows = await sequelize.query(mainQuery, {
+        replacements,
+        type: sequelize.QueryTypes.SELECT
+      })
 
       if (!rows.length) return response(res, 'Data not found', {}, 404, false)
 
-      // 🔎 Ambil nama dokumen unik
+      // ambil nama dokumen (unik) — pake replacements juga
       const dokumenRows = await sequelize.query(
-        `SELECT DISTINCT nama_dokumen FROM documents WHERE jenis_dokumen LIKE '%${tipeValue}%' ORDER BY LOWER(nama_dokumen) ASC`,
-        { type: sequelize.QueryTypes.SELECT }
+        'SELECT DISTINCT nama_dokumen FROM documents WHERE jenis_dokumen LIKE :jenisPattern ORDER BY LOWER(nama_dokumen) ASC',
+        { replacements, type: sequelize.QueryTypes.SELECT }
       )
       const dokumenNames = dokumenRows.map(r => r.nama_dokumen)
 
-      // 🔎 Ambil jumlah dokumen per depo
+      // jumlah dokumen per depo: join documents -> depos via status_depo (sesuai relasi kamu)
       const dokumenCountRows = await sequelize.query(
         `SELECT d.kode_plant, COUNT(doc.id) AS jumlah_dokumen
          FROM documents doc
-         JOIN depos d ON d.nama_depo = doc.nama_depo
-         WHERE doc.jenis_dokumen LIKE '%${tipeValue}%'
+         JOIN depos d ON doc.status_depo = d.status_depo
+         WHERE doc.jenis_dokumen LIKE :jenisPattern
          GROUP BY d.kode_plant`,
-        { type: sequelize.QueryTypes.SELECT }
+        { replacements, type: sequelize.QueryTypes.SELECT }
       )
       const dokumenCountMap = {}
-      dokumenCountRows.forEach(dc => dokumenCountMap[dc.kode_plant] = dc.jumlah_dokumen) // eslint-disable-line
+      dokumenCountRows.forEach(dc => { dokumenCountMap[dc.kode_plant] = dc.jumlah_dokumen })
 
-      // 🔎 Mapping per depo & activity
+      // mapping depo -> activities -> docs
       const depoMap = {}
       for (const row of rows) {
-        if (!depoMap[row.kode_plant]) {
-          depoMap[row.kode_plant] = {
+        const kode = row.kode_plant || '_unknown_'
+        if (!depoMap[kode]) {
+          depoMap[kode] = {
             kode_plant: row.kode_plant,
             nama_depo: row.nama_depo,
             profit_center: row.profit_center,
@@ -3368,15 +3391,15 @@ module.exports = {
         }
 
         if (row.activity_id) {
-          if (!depoMap[row.kode_plant].activities[row.activity_id]) {
-            depoMap[row.kode_plant].activities[row.activity_id] = {
+          if (!depoMap[kode].activities[row.activity_id]) {
+            depoMap[kode].activities[row.activity_id] = {
               createdAt: row.activity_date,
               progress: row.activity_progress,
               docs: []
             }
           }
           if (row.dokumen) {
-            depoMap[row.kode_plant].activities[row.activity_id].docs.push({
+            depoMap[kode].activities[row.activity_id].docs.push({
               dokumen: row.dokumen,
               status_dokumen: row.status_dokumen,
               createdAt: row.dokumen_created
@@ -3385,14 +3408,15 @@ module.exports = {
         }
       }
 
-      // 🔎 Build header & body
+      // build header & body (skip activities with zero progress already filtered in SQL)
       const header = buildHeader(dokumenNames)
       const body = []
       let no = 1
       for (const depo of Object.values(depoMap)) {
-        const activities = Object.values(depo.activities).filter(act => act.progress > 0)
+        const activities = Object.values(depo.activities)
         if (activities.length) {
           activities.forEach((act, idx) => {
+            let progressCount = 0
             const row = []
             row.push(`${no}.${idx + 1}`)
             row.push(moment(act.createdAt).format('LL'))
@@ -3402,7 +3426,6 @@ module.exports = {
             row.push(depo.kode_sap_1)
             row.push(depo.status_depo)
 
-            let progressCount = 0
             for (const nama of dokumenNames) {
               const doc = act.docs.find(d => d.dokumen === nama)
               if (doc && (doc.status_dokumen === 3 || doc.status_dokumen === 5)) progressCount++
@@ -3411,7 +3434,6 @@ module.exports = {
 
             const percent = depo.dokumen_count > 0 ? `${Math.round((progressCount / depo.dokumen_count) * 100)}%` : '0%'
             row.push(depo.dokumen_count, progressCount, percent)
-
             body.push(row)
           })
         } else {
