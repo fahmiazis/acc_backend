@@ -3277,8 +3277,12 @@ module.exports = {
       const { level, kode: depoKode } = req.user
       const { from, to, tipe } = req.query
 
-      const timeFrom = from ? moment(from).startOf('day').format('YYYY-MM-DD HH:mm:ss') : moment().startOf('day').format('YYYY-MM-DD HH:mm:ss')
-      const timeTo = to ? moment(to).endOf('day').format('YYYY-MM-DD HH:mm:ss') : moment().endOf('day').format('YYYY-MM-DD HH:mm:ss')
+      const timeFrom = from
+        ? moment(from).startOf('day').format('YYYY-MM-DD HH:mm:ss')
+        : moment().startOf('day').format('YYYY-MM-DD HH:mm:ss')
+      const timeTo = to
+        ? moment(to).endOf('day').format('YYYY-MM-DD HH:mm:ss')
+        : moment().endOf('day').format('YYYY-MM-DD HH:mm:ss')
       const tipeValue = tipe || 'daily'
 
       const schema = joi.object({
@@ -3289,7 +3293,7 @@ module.exports = {
       const { value: results, error } = schema.validate(req.body)
       if (error) return response(res, 'Error', { error: error.message }, 400, false)
 
-      // 🔑 Filter level
+      // 🔑 Build filter
       let filterClause = ''
       if ([1, 2, 3].includes(level)) {
         const conditions = []
@@ -3301,9 +3305,9 @@ module.exports = {
         filterClause = `WHERE d.kode_plant = '${depoKode}'`
       }
 
-      // 🔎 Ambil semua data flat
-      const query = `
-        SELECT
+      // 🔎 Ambil data flat sekaligus
+      const rows = await sequelize.query(
+        `SELECT
           d.kode_plant,
           d.nama_depo,
           d.profit_center,
@@ -3316,26 +3320,37 @@ module.exports = {
           p.status_dokumen,
           p.createdAt AS dokumen_created
         FROM depos d
-        LEFT JOIN pics p2 ON p2.kode_depo = d.kode_plant
+        LEFT JOIN pics p ON p.kode_depo = d.kode_plant
         LEFT JOIN activities a 
-          ON a.kode_plant = d.kode_plant 
-          AND a.jenis_dokumen = '${tipeValue}' 
-          AND a.createdAt BETWEEN '${timeFrom}' AND '${timeTo}'
-          AND a.progress > 0 -- skip activity progress 0
-        LEFT JOIN Paths p ON p.activityId = a.id
+              ON a.kode_plant = d.kode_plant
+              AND a.jenis_dokumen = '${tipeValue}'
+              AND a.createdAt BETWEEN '${timeFrom}' AND '${timeTo}'
+        LEFT JOIN Paths p2 ON p2.activityId = a.id
         ${filterClause}
-        ORDER BY d.nama_depo ASC, a.createdAt ASC
-      `
+        ORDER BY d.nama_depo ASC, a.createdAt ASC`,
+        { type: sequelize.QueryTypes.SELECT }
+      )
 
-      const rows = await sequelize.query(query, { type: sequelize.QueryTypes.SELECT })
       if (!rows.length) return response(res, 'Data not found', {}, 404, false)
 
-      // 🔎 Dokumen unik per jenis
+      // 🔎 Ambil nama dokumen unik
       const dokumenRows = await sequelize.query(
         `SELECT DISTINCT nama_dokumen FROM documents WHERE jenis_dokumen LIKE '%${tipeValue}%' ORDER BY LOWER(nama_dokumen) ASC`,
         { type: sequelize.QueryTypes.SELECT }
       )
       const dokumenNames = dokumenRows.map(r => r.nama_dokumen)
+
+      // 🔎 Ambil jumlah dokumen per depo
+      const dokumenCountRows = await sequelize.query(
+        `SELECT d.kode_plant, COUNT(doc.id) AS jumlah_dokumen
+         FROM documents doc
+         JOIN depos d ON d.nama_depo = doc.nama_depo
+         WHERE doc.jenis_dokumen LIKE '%${tipeValue}%'
+         GROUP BY d.kode_plant`,
+        { type: sequelize.QueryTypes.SELECT }
+      )
+      const dokumenCountMap = {}
+      dokumenCountRows.forEach(dc => dokumenCountMap[dc.kode_plant] = dc.jumlah_dokumen) // eslint-disable-line
 
       // 🔎 Mapping per depo & activity
       const depoMap = {}
@@ -3347,7 +3362,7 @@ module.exports = {
             profit_center: row.profit_center,
             kode_sap_1: row.kode_sap_1,
             status_depo: row.status_depo,
-            dokumen_count: 0, // nanti dihitung
+            dokumen_count: dokumenCountMap[row.kode_plant] || 0,
             activities: {}
           }
         }
@@ -3370,21 +3385,12 @@ module.exports = {
         }
       }
 
-      // 🔎 Jumlah dokumen per depo
-      const dokumenCountRows = await sequelize.query(
-        `SELECT kode_plant, COUNT(*) AS jumlah_dokumen FROM documents WHERE jenis_dokumen LIKE '%${tipeValue}%' GROUP BY kode_plant`,
-        { type: sequelize.QueryTypes.SELECT }
-      )
-      for (const dc of dokumenCountRows) {
-        if (depoMap[dc.kode_plant]) depoMap[dc.kode_plant].dokumen_count = dc.jumlah_dokumen
-      }
-
       // 🔎 Build header & body
       const header = buildHeader(dokumenNames)
       const body = []
       let no = 1
       for (const depo of Object.values(depoMap)) {
-        const activities = Object.values(depo.activities)
+        const activities = Object.values(depo.activities).filter(act => act.progress > 0)
         if (activities.length) {
           activities.forEach((act, idx) => {
             const row = []
