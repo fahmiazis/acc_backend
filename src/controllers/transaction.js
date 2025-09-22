@@ -3293,7 +3293,7 @@ module.exports = {
       const { value: results, error } = schema.validate(req.body)
       if (error) return response(res, 'Error', { error: error.message }, 400, false)
 
-      // 🔑 Build filter sesuai level
+      // 🔑 Build filter
       let filterClause = ''
       if ([1, 2, 3].includes(level)) {
         const conditions = []
@@ -3305,60 +3305,128 @@ module.exports = {
         filterClause = `WHERE d.kode_plant = '${depoKode}'`
       }
 
-      // 🔎 Raw SQL fix sesuai schema dan relasi Sequelize
+      // 🔎 Ambil semua data flat sekaligus
       const query = `
-        SELECT 
-          d.nama_depo,
+        SELECT
           d.kode_plant,
+          d.nama_depo,
           d.profit_center,
           d.kode_sap_1,
           d.status_depo,
-          (
-            SELECT JSON_ARRAYAGG(
-              JSON_OBJECT(
-                'createdAt', a.createdAt,
-                'progress', a.progress,
-                'doc', (
-                  SELECT JSON_ARRAYAGG(
-                    JSON_OBJECT(
-                      'dokumen', doc.dokumen,
-                      'status_dokumen', doc.status_dokumen,
-                      'createdAt', doc.createdAt
-                    )
-                  )
-                  FROM Paths doc
-                  WHERE doc.activityId = a.id
-                )
-              )
-            )
-            FROM activities a
-            WHERE a.kode_plant = d.kode_plant
-              AND a.jenis_dokumen = '${tipeValue}'
-              AND a.createdAt BETWEEN '${timeFrom}' AND '${timeTo}'
-          ) AS active,
-          (
-            SELECT JSON_ARRAYAGG(doc.nama_dokumen)
-            FROM documents doc
-            WHERE doc.status_depo = d.status_depo
-              AND doc.jenis_dokumen = '${tipeValue}'
-          ) AS dokumen_names
+          a.id AS activity_id,
+          a.createdAt AS activity_date,
+          a.progress AS activity_progress,
+          p.dokumen,
+          p.status_dokumen,
+          p.createdAt AS dokumen_created
         FROM depos d
-        LEFT JOIN pics p ON p.kode_depo = d.kode_plant
+        LEFT JOIN pics pic ON pic.kode_depo = d.kode_plant
+        LEFT JOIN activities a 
+          ON a.kode_plant = d.kode_plant 
+          AND a.jenis_dokumen = '${tipeValue}' 
+          AND a.createdAt BETWEEN '${timeFrom}' AND '${timeTo}'
+          AND a.progress > 0   -- 🔥 skip activity progress 0
+        LEFT JOIN Paths p ON p.activityId = a.id
         ${filterClause}
-        ORDER BY d.nama_depo ASC
+        ORDER BY d.nama_depo ASC, a.createdAt ASC
       `
 
-      const sa = await sequelize.query(query, { type: sequelize.QueryTypes.SELECT })
-
-      if (!sa.length) return response(res, 'Data not found', {}, 404, false)
+      const rows = await sequelize.query(query, { type: sequelize.QueryTypes.SELECT })
+      if (!rows.length) return response(res, 'Data not found', {}, 404, false)
 
       // 🔎 Ambil dokumen unik
-      const dokumenSet = new Set()
-      sa.forEach(item => item.dokumen_names?.forEach(n => dokumenSet.add(n)))
-      const dokumenNames = Array.from(dokumenSet).sort()
+      const dokumenRows = await sequelize.query(
+        `SELECT DISTINCT nama_dokumen FROM documents WHERE jenis_dokumen LIKE '%${tipeValue}%' ORDER BY LOWER(nama_dokumen) ASC`,
+        { type: sequelize.QueryTypes.SELECT }
+      )
+      const dokumenNames = dokumenRows.map(r => r.nama_dokumen)
 
+      // 🔎 Mapping per depo & activity
+      const depoMap = {}
+      for (const row of rows) {
+        if (!depoMap[row.kode_plant]) {
+          depoMap[row.kode_plant] = {
+            kode_plant: row.kode_plant,
+            nama_depo: row.nama_depo,
+            profit_center: row.profit_center,
+            kode_sap_1: row.kode_sap_1,
+            status_depo: row.status_depo,
+            dokumen_count: 0,
+            activities: {}
+          }
+        }
+
+        if (row.activity_id) {
+          if (!depoMap[row.kode_plant].activities[row.activity_id]) {
+            depoMap[row.kode_plant].activities[row.activity_id] = {
+              createdAt: row.activity_date,
+              progress: row.activity_progress,
+              docs: []
+            }
+          }
+          if (row.dokumen) {
+            depoMap[row.kode_plant].activities[row.activity_id].docs.push({
+              dokumen: row.dokumen,
+              status_dokumen: row.status_dokumen,
+              createdAt: row.dokumen_created
+            })
+          }
+        }
+      }
+
+      // 🔎 Ambil jumlah dokumen per depo
+      const dokumenCountRows = await sequelize.query(
+       `SELECT kode_plant, COUNT(*) AS jumlah_dokumen FROM documents WHERE jenis_dokumen LIKE '%${tipeValue}%' GROUP BY kode_plant`,
+       { type: sequelize.QueryTypes.SELECT }
+      )
+      for (const dc of dokumenCountRows) {
+        if (depoMap[dc.kode_plant]) depoMap[dc.kode_plant].dokumen_count = dc.jumlah_dokumen
+      }
+
+      // 🔎 Build header & body
       const header = buildHeader(dokumenNames)
-      const body = buildBody(sa, dokumenNames)
+      const body = []
+      let no = 1
+      for (const depo of Object.values(depoMap)) {
+        const activities = Object.values(depo.activities)
+        if (activities.length) {
+          activities.forEach((act, idx) => {
+            const row = []
+            row.push(`${no}.${idx + 1}`)
+            row.push(moment(act.createdAt).format('LL'))
+            row.push(depo.nama_depo)
+            row.push(depo.kode_plant)
+            row.push(depo.profit_center)
+            row.push(depo.kode_sap_1)
+            row.push(depo.status_depo)
+
+            let progressCount = 0
+            for (const nama of dokumenNames) {
+              const doc = act.docs.find(d => d.dokumen === nama)
+              if (doc && (doc.status_dokumen === 3 || doc.status_dokumen === 5)) progressCount++
+              row.push(doc ? (doc.status_dokumen === 3 ? moment(doc.createdAt).format('LLL') : `Telat (${moment(doc.createdAt).format('LLL')})`) : '-')
+            }
+
+            const percent = depo.dokumen_count > 0 ? `${Math.round((progressCount / depo.dokumen_count) * 100)}%` : '0%'
+            row.push(depo.dokumen_count, progressCount, percent)
+
+            body.push(row)
+          })
+        } else {
+          const row = []
+          row.push(no)
+          row.push('-')
+          row.push(depo.nama_depo)
+          row.push(depo.kode_plant)
+          row.push(depo.profit_center)
+          row.push(depo.kode_sap_1)
+          row.push(depo.status_depo)
+          dokumenNames.forEach(() => row.push('-'))
+          row.push(depo.dokumen_count, 0, '0%')
+          body.push(row)
+        }
+        no++
+      }
 
       return response(res, 'success', { data: [header, ...body] })
     } catch (err) {
