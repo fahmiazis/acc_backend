@@ -3318,12 +3318,12 @@ module.exports = {
                     'status_dokumen', doc.status_dokumen,
                     'createdAt', doc.createdAt
                   ))
-                  FROM path doc
+                  FROM paths doc
                   WHERE doc.activityId = a.id
                 )
               )
             )
-            FROM activity a
+            FROM activities a
             WHERE a.depoId = d.id 
               AND a.jenis_dokumen = '${tipeValue}'
               AND a.createdAt BETWEEN '${timeFrom}' AND '${timeTo}'
