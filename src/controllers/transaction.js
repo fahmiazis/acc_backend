@@ -61,22 +61,25 @@ const buildBody = (sa, dokumenNames) => {
   const rows = []
 
   sa.forEach((item, index) => {
-    // kalau ada banyak activity → bikin beberapa baris
     if (item.active?.length) {
       item.active.forEach((act, idx) => {
         const row = []
-        row.push(`${index + 1}.${idx + 1}`) // No → kasih sub nomor biar unik
-        row.push(moment(act.createdAt).format('LL')) // Document Date sesuai activity
-
+        row.push(`${index + 1}.${idx + 1}`)
+        row.push(moment(act.createdAt).format('LL'))
         row.push(item.nama_depo)
         row.push(item.kode_plant)
         row.push(item.profit_center)
         row.push(item.kode_sap_1)
         row.push(item.status_depo)
 
+        let totalDoc = 0
+        let progress = 0
+
         for (const nama of dokumenNames) {
           const docMatch = act.doc?.find(d => d.dokumen === nama)
           if (docMatch) {
+            totalDoc++
+            if (docMatch.status_dokumen === 3) progress++
             row.push(
               docMatch.status_dokumen === 3
                 ? moment(docMatch.createdAt).format('LLL')
@@ -89,19 +92,15 @@ const buildBody = (sa, dokumenNames) => {
           }
         }
 
-        const totalDoc = item.dokumen?.length || 0
-        const progress = act.progress || 0
         const percent = totalDoc > 0 ? `${Math.round((progress / totalDoc) * 100)}%` : '0%'
-
         row.push(totalDoc, progress, percent)
+
         rows.push(row)
       })
     } else {
-      // kalau nggak ada activity → tetep bikin row kosong
       const row = []
       row.push(index + 1)
-      row.push('-') // Document Date kosong
-
+      row.push('-')
       row.push(item.nama_depo)
       row.push(item.kode_plant)
       row.push(item.profit_center)
@@ -112,7 +111,7 @@ const buildBody = (sa, dokumenNames) => {
         row.push('-')
       }
 
-      row.push(item.dokumen?.length || 0, 0, '0%')
+      row.push(0, 0, '0%') // totalDoc & progress
       rows.push(row)
     }
   })
