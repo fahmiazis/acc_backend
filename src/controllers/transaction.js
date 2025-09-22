@@ -61,18 +61,20 @@ const buildBody = (sa, dokumenNames) => {
   const rows = []
 
   sa.forEach((item, index) => {
-    const totalDoc = item.dokumen?.length || 0 // jumlah dokumen dari depo
-    const progressCount = item.active?.reduce((sum, act) => {
-      const done = act.doc?.filter(d => d.status_dokumen === 3).length || 0
-      return sum + done
-    }, 0)
+    const totalDoc = item.dokumen?.length || 0
 
-    const percent = totalDoc > 0 ? `${Math.round((progressCount / totalDoc) * 100)}% ` : '0%'
+    // hitung progress total (selesai + telat)
+    const progressCount = item.active?.reduce((sum, act) => {
+      const done = act.doc?.filter(d => d.status_dokumen === 3 || d.status_dokumen === 5).length || 0
+      return sum + done
+    }, 0) || 0
+
+    const percent = totalDoc > 0 ? `${Math.round((progressCount / totalDoc) * 100)}%` : '0%'
 
     if (item.active?.length) {
       item.active.forEach((act, idx) => {
         const row = []
-        row.push(`${index + 1}.${idx + 1}`)
+        row.push(`${index + 1}.${idx + 1}`) // nomor unik per activity
         row.push(moment(act.createdAt).format('LL'))
         row.push(item.nama_depo)
         row.push(item.kode_plant)
@@ -80,7 +82,6 @@ const buildBody = (sa, dokumenNames) => {
         row.push(item.kode_sap_1)
         row.push(item.status_depo)
 
-        // isi kolom dokumen
         for (const nama of dokumenNames) {
           const docMatch = act.doc?.find(d => d.dokumen === nama)
           if (docMatch) {
