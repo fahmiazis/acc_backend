@@ -44,39 +44,80 @@ const buildFilter = async (level, results, depoKode, names) => {
 }
 
 const buildHeader = (dokumenNames) => {
-  const first = ['No', 'Nama Depo', 'Kode Plant', 'Profit Center', 'Kode SAP 1', 'Status Depo']
+  const first = [
+    'No',
+    'Document Date', // ⬅️ tambahan
+    'Nama Depo',
+    'Kode Plant',
+    'Profit Center',
+    'Kode SAP 1',
+    'Status Depo'
+  ]
   const last = ['Jumlah Dokumen', 'Progress', 'Persentase']
   return first.concat(dokumenNames, last)
 }
 
 const buildBody = (sa, dokumenNames) => {
-  return sa.map((item, index) => {
-    const row = []
-    row.push(index + 1)
-    row.push(item.nama_depo)
-    row.push(item.kode_plant)
-    row.push(item.profit_center)
-    row.push(item.kode_sap_1)
-    row.push(item.status_depo)
+  const rows = []
 
-    for (const nama of dokumenNames) {
-      const docMatch = item.active?.[0]?.doc?.find(d => d.dokumen === nama)
-      if (docMatch) {
-        row.push(docMatch.status_dokumen === 3 ? moment(docMatch.createdAt).format('LLL') //eslint-disable-line
-          : docMatch.status_dokumen === 5 ? `Telat (${moment(docMatch.createdAt).format('LLL')})` //eslint-disable-line
-            : '-')
-      } else {
+  sa.forEach((item, index) => {
+    // kalau ada banyak activity → bikin beberapa baris
+    if (item.active?.length) {
+      item.active.forEach((act, idx) => {
+        const row = []
+        row.push(`${index + 1}.${idx + 1}`) // No → kasih sub nomor biar unik
+        row.push(moment(act.createdAt).format('LL')) // Document Date sesuai activity
+
+        row.push(item.nama_depo)
+        row.push(item.kode_plant)
+        row.push(item.profit_center)
+        row.push(item.kode_sap_1)
+        row.push(item.status_depo)
+
+        for (const nama of dokumenNames) {
+          const docMatch = act.doc?.find(d => d.dokumen === nama)
+          if (docMatch) {
+            row.push(
+              docMatch.status_dokumen === 3
+                ? moment(docMatch.createdAt).format('LLL')
+                : docMatch.status_dokumen === 5
+                  ? `Telat (${moment(docMatch.createdAt).format('LLL')})`
+                  : '-'
+            )
+          } else {
+            row.push('-')
+          }
+        }
+
+        const totalDoc = item.dokumen?.length || 0
+        const progress = act.progress || 0
+        const percent = totalDoc > 0 ? `${Math.round((progress / totalDoc) * 100)}%` : '0%'
+
+        row.push(totalDoc, progress, percent)
+        rows.push(row)
+      })
+    } else {
+      // kalau nggak ada activity → tetep bikin row kosong
+      const row = []
+      row.push(index + 1)
+      row.push('-') // Document Date kosong
+
+      row.push(item.nama_depo)
+      row.push(item.kode_plant)
+      row.push(item.profit_center)
+      row.push(item.kode_sap_1)
+      row.push(item.status_depo)
+
+      for (const nama of dokumenNames) { // eslint-disable-line
         row.push('-')
       }
+
+      row.push(item.dokumen?.length || 0, 0, '0%')
+      rows.push(row)
     }
-
-    const totalDoc = item.dokumen?.length || 0
-    const progress = item.active?.[0]?.progress || 0
-    const percent = totalDoc > 0 ? `${Math.round((progress / totalDoc) * 100)}%` : '0%'
-
-    row.push(totalDoc, progress, percent)
-    return row
   })
+
+  return rows
 }
 
 module.exports = {
@@ -3249,10 +3290,10 @@ module.exports = {
         return response(res, 'Error', { error: error.message }, 400, false)
       }
 
-      // 🔑 bangun filter sesuai level & kondisi
+      // 🔑 filter depo sesuai level
       const filters = await buildFilter(level, results, depoKode, req.user.name)
 
-      // 🔎 query dokumen untuk header
+      // 🔎 ambil nama dokumen unik
       const dokumenRows = await documents.findAll({
         attributes: [[fn('DISTINCT', col('nama_dokumen')), 'nama_dokumen']],
         where: { jenis_dokumen: { [Op.like]: `%${tipeValue}%` } },
@@ -3268,6 +3309,7 @@ module.exports = {
           {
             model: activity,
             as: 'active',
+            required: false, // ⬅️ penting: jangan cut data
             where: {
               jenis_dokumen: { [Op.like]: `%${tipeValue}%` },
               createdAt: { [Op.between]: [timeFrom, timeTo] }
@@ -3286,7 +3328,6 @@ module.exports = {
         return response(res, 'Data not found', {}, 404, false)
       }
 
-      // ✨ bentuk header & body
       const header = buildHeader(dokumenNames)
       const body = buildBody(sa, dokumenNames)
 
