@@ -61,17 +61,24 @@ const buildBody = (sa, dokumenNames) => {
   const rows = []
 
   sa.forEach((item, index) => {
-    const totalDoc = dokumenNames.length // total dokumen per depo
-    const progressCount = item.active?.reduce((sum, act) => {
-      const done = act.doc?.filter(d => d.status_dokumen === 3 || d.status_dokumen === 5).length || 0
-      return sum + done
-    }, 0) || 0
+    // Buat map dokumen untuk progress unik
+    const docProgressMap = {}
+    item.active?.forEach(act => {
+      act.doc?.forEach(d => {
+        if (d.status_dokumen === 3 || d.status_dokumen === 5) {
+          docProgressMap[d.dokumen] = true // hanya dihitung sekali per dokumen
+        }
+      })
+    })
+
+    const totalDoc = dokumenNames.length // total dokumen unik per depo
+    const progressCount = Object.keys(docProgressMap).length // jumlah dokumen selesai/telat unik
     const percent = totalDoc > 0 ? `${Math.round((progressCount / totalDoc) * 100)}%` : '0%'
 
     if (item.active?.length) {
       item.active.forEach((act, idx) => {
         const row = []
-        row.push(`${index + 1}.${idx + 1}`) // nomor unik per activity
+        row.push(`${index + 1}.${idx + 1}`)
         row.push(moment(act.createdAt).format('LL'))
         row.push(item.nama_depo)
         row.push(item.kode_plant)
