@@ -3291,7 +3291,7 @@ module.exports = {
       const { value: results, error } = schema.validate(req.body)
       if (error) return response(res, 'Error', { error: error.message }, 400, false)
 
-      // 🔑 build filter sesuai level
+      // 🔑 Build filter sesuai level
       let filterClause = ''
       if ([1, 2, 3].includes(level)) {
         const conditions = []
@@ -3303,7 +3303,7 @@ module.exports = {
         filterClause = `WHERE d.kode_plant = '${depoKode}'`
       }
 
-      // 🔎 raw SQL MySQL dengan JSON_ARRAYAGG, Paths hanya pakai kode_activity
+      // 🔎 Raw SQL dengan JSON_ARRAYAGG sesuai relasi Sequelize asli
       const query = `
         SELECT 
           d.nama_depo,
@@ -3323,7 +3323,7 @@ module.exports = {
                     'createdAt', doc.createdAt
                   ))
                   FROM Paths doc
-                  WHERE doc.kode_activity = a.kode_activity
+                  WHERE doc.activityId = a.id
                 )
               )
             )
@@ -3348,7 +3348,7 @@ module.exports = {
 
       if (!sa.length) return response(res, 'Data not found', {}, 404, false)
 
-      // 🔎 ambil dokumen unik
+      // 🔎 Ambil dokumen unik
       const dokumenSet = new Set()
       sa.forEach(item => item.dokumen_names?.forEach(n => dokumenSet.add(n)))
       const dokumenNames = Array.from(dokumenSet).sort()
