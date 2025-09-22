@@ -3277,12 +3277,8 @@ module.exports = {
       const { level, kode: depoKode } = req.user
       const { from, to, tipe } = req.query
 
-      const timeFrom = from
-        ? moment(from).startOf('day').format('YYYY-MM-DD HH:mm:ss')
-        : moment().startOf('day').format('YYYY-MM-DD HH:mm:ss')
-      const timeTo = to
-        ? moment(to).endOf('day').format('YYYY-MM-DD HH:mm:ss')
-        : moment().endOf('day').format('YYYY-MM-DD HH:mm:ss')
+      const timeFrom = from ? moment(from).startOf('day').format('YYYY-MM-DD HH:mm:ss') : moment().startOf('day').format('YYYY-MM-DD HH:mm:ss')
+      const timeTo = to ? moment(to).endOf('day').format('YYYY-MM-DD HH:mm:ss') : moment().endOf('day').format('YYYY-MM-DD HH:mm:ss')
       const tipeValue = tipe || 'daily'
 
       const schema = joi.object({
@@ -3293,7 +3289,7 @@ module.exports = {
       const { value: results, error } = schema.validate(req.body)
       if (error) return response(res, 'Error', { error: error.message }, 400, false)
 
-      // 🔑 Build filter
+      // 🔑 Filter level
       let filterClause = ''
       if ([1, 2, 3].includes(level)) {
         const conditions = []
@@ -3305,7 +3301,7 @@ module.exports = {
         filterClause = `WHERE d.kode_plant = '${depoKode}'`
       }
 
-      // 🔎 Ambil semua data flat sekaligus
+      // 🔎 Ambil semua data flat
       const query = `
         SELECT
           d.kode_plant,
@@ -3320,12 +3316,12 @@ module.exports = {
           p.status_dokumen,
           p.createdAt AS dokumen_created
         FROM depos d
-        LEFT JOIN pics pic ON pic.kode_depo = d.kode_plant
+        LEFT JOIN pics p2 ON p2.kode_depo = d.kode_plant
         LEFT JOIN activities a 
           ON a.kode_plant = d.kode_plant 
           AND a.jenis_dokumen = '${tipeValue}' 
           AND a.createdAt BETWEEN '${timeFrom}' AND '${timeTo}'
-          AND a.progress > 0   -- 🔥 skip activity progress 0
+          AND a.progress > 0 -- skip activity progress 0
         LEFT JOIN Paths p ON p.activityId = a.id
         ${filterClause}
         ORDER BY d.nama_depo ASC, a.createdAt ASC
@@ -3334,7 +3330,7 @@ module.exports = {
       const rows = await sequelize.query(query, { type: sequelize.QueryTypes.SELECT })
       if (!rows.length) return response(res, 'Data not found', {}, 404, false)
 
-      // 🔎 Ambil dokumen unik
+      // 🔎 Dokumen unik per jenis
       const dokumenRows = await sequelize.query(
         `SELECT DISTINCT nama_dokumen FROM documents WHERE jenis_dokumen LIKE '%${tipeValue}%' ORDER BY LOWER(nama_dokumen) ASC`,
         { type: sequelize.QueryTypes.SELECT }
@@ -3351,7 +3347,7 @@ module.exports = {
             profit_center: row.profit_center,
             kode_sap_1: row.kode_sap_1,
             status_depo: row.status_depo,
-            dokumen_count: 0,
+            dokumen_count: 0, // nanti dihitung
             activities: {}
           }
         }
@@ -3374,10 +3370,10 @@ module.exports = {
         }
       }
 
-      // 🔎 Ambil jumlah dokumen per depo
+      // 🔎 Jumlah dokumen per depo
       const dokumenCountRows = await sequelize.query(
-       `SELECT kode_plant, COUNT(*) AS jumlah_dokumen FROM documents WHERE jenis_dokumen LIKE '%${tipeValue}%' GROUP BY kode_plant`,
-       { type: sequelize.QueryTypes.SELECT }
+        `SELECT kode_plant, COUNT(*) AS jumlah_dokumen FROM documents WHERE jenis_dokumen LIKE '%${tipeValue}%' GROUP BY kode_plant`,
+        { type: sequelize.QueryTypes.SELECT }
       )
       for (const dc of dokumenCountRows) {
         if (depoMap[dc.kode_plant]) depoMap[dc.kode_plant].dokumen_count = dc.jumlah_dokumen
