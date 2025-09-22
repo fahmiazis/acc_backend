@@ -61,6 +61,14 @@ const buildBody = (sa, dokumenNames) => {
   const rows = []
 
   sa.forEach((item, index) => {
+    const totalDoc = item.dokumen?.length || 0 // jumlah dokumen dari depo
+    const progressCount = item.active?.reduce((sum, act) => {
+      const done = act.doc?.filter(d => d.status_dokumen === 3).length || 0
+      return sum + done
+    }, 0)
+
+    const percent = totalDoc > 0 ? `${Math.round((progressCount / totalDoc) * 100)}% ` : '0%'
+
     if (item.active?.length) {
       item.active.forEach((act, idx) => {
         const row = []
@@ -72,14 +80,10 @@ const buildBody = (sa, dokumenNames) => {
         row.push(item.kode_sap_1)
         row.push(item.status_depo)
 
-        let totalDoc = 0
-        let progress = 0
-
+        // isi kolom dokumen
         for (const nama of dokumenNames) {
           const docMatch = act.doc?.find(d => d.dokumen === nama)
           if (docMatch) {
-            totalDoc++
-            if (docMatch.status_dokumen === 3) progress++
             row.push(
               docMatch.status_dokumen === 3
                 ? moment(docMatch.createdAt).format('LLL')
@@ -92,9 +96,7 @@ const buildBody = (sa, dokumenNames) => {
           }
         }
 
-        const percent = totalDoc > 0 ? `${Math.round((progress / totalDoc) * 100)}%` : '0%'
-        row.push(totalDoc, progress, percent)
-
+        row.push(totalDoc, progressCount, percent)
         rows.push(row)
       })
     } else {
@@ -111,7 +113,7 @@ const buildBody = (sa, dokumenNames) => {
         row.push('-')
       }
 
-      row.push(0, 0, '0%') // totalDoc & progress
+      row.push(totalDoc, 0, '0%') // kalau nggak ada activity
       rows.push(row)
     }
   })
