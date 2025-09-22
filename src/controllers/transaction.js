@@ -3275,8 +3275,12 @@ module.exports = {
       const { level, kode: depoKode } = req.user
       const { from, to, tipe } = req.query
 
-      const timeFrom = from ? moment(from).startOf('day').format('YYYY-MM-DD HH:mm:ss') : moment().startOf('day').format('YYYY-MM-DD HH:mm:ss')
-      const timeTo = to ? moment(to).endOf('day').format('YYYY-MM-DD HH:mm:ss') : moment().endOf('day').format('YYYY-MM-DD HH:mm:ss')
+      const timeFrom = from
+        ? moment(from).startOf('day').format('YYYY-MM-DD HH:mm:ss')
+        : moment().startOf('day').format('YYYY-MM-DD HH:mm:ss')
+      const timeTo = to
+        ? moment(to).endOf('day').format('YYYY-MM-DD HH:mm:ss')
+        : moment().endOf('day').format('YYYY-MM-DD HH:mm:ss')
       const tipeValue = tipe || 'daily'
 
       const schema = joi.object({
@@ -3288,18 +3292,18 @@ module.exports = {
       if (error) return response(res, 'Error', { error: error.message }, 400, false)
 
       // 🔑 build filter sesuai level
-      let filters = ''
+      let filterClause = ''
       if ([1, 2, 3].includes(level)) {
         const conditions = []
         if (results.pic && results.pic !== 'all') conditions.push(`p.pic LIKE '%${results.pic}%'`)
         if (results.spv && results.spv !== '') conditions.push(`p.spv LIKE '%${results.spv}%'`)
         if (results.kode_plant && results.kode_plant !== 'all') conditions.push(`d.kode_plant = '${results.kode_plant}'`)
-        filters = conditions.length ? 'WHERE ' + conditions.join(' OR ') : ''
+        filterClause = conditions.length ? 'WHERE ' + conditions.join(' OR ') : ''
       } else if ([4, 5].includes(level)) {
-        filters = `WHERE d.kode_plant = '${depoKode}'`
+        filterClause = `WHERE d.kode_plant = '${depoKode}'`
       }
 
-      // 🔎 query MySQL
+      // 🔎 raw SQL MySQL dengan JSON_ARRAYAGG sesuai relasi kode asli
       const query = `
         SELECT 
           d.nama_depo,
@@ -3319,7 +3323,8 @@ module.exports = {
                     'createdAt', doc.createdAt
                   ))
                   FROM Paths doc
-                  WHERE doc.kode_plant = d.kode_plant AND doc.activity_kode = a.kode_activity
+                  WHERE doc.kode_plant = d.kode_plant
+                    AND doc.kode_activity = a.kode_activity
                 )
               )
             )
@@ -3336,7 +3341,7 @@ module.exports = {
           ) AS dokumen_names
         FROM depos d
         LEFT JOIN pics p ON p.kode_depo = d.kode_plant
-        ${filters}
+        ${filterClause}
         ORDER BY d.nama_depo ASC
       `
 
