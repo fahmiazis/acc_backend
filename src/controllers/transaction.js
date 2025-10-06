@@ -6,42 +6,42 @@ const joi = require('joi')
 const uploadHelper = require('../helpers/upload')
 const multer = require('multer')
 const fs = require('fs')
-const vs = require('fs-extra')
-const { APP_URL } = process.env
+// const vs = require('fs-extra')
+// const { APP_URL } = process.env
 // const mailer = require('../helpers/mailer')
 const moment = require('moment')
-const xlsx = require('xlsx')
+// const xlsx = require('xlsx')
 const wrapMail = require('../helpers/wrapMail')
-const { fn, col } = require('sequelize')
+// const { fn, col } = require('sequelize')
 
-const buildFilter = async (level, results, depoKode, names) => {
-  if (level === 1 || level === 2 || level === 3) {
-    if (results.pic && results.pic !== 'all') {
-      const picRecords = await pic.findAll({
-        where: { pic: { [Op.like]: `%${results.pic}%` } }
-      })
-      const kodeDepos = picRecords.map(p => p.kode_depo)
-      return { kode_plant: { [Op.in]: kodeDepos } }
-    }
-    if (results.kode_plant && results.kode_plant !== 'all') {
-      return { kode_plant: results.kode_plant }
-    }
-    if (results.spv) {
-      const picRecords = await pic.findAll({
-        where: { spv: { [Op.like]: `%${results.spv}%` } }
-      })
-      const kodeDepos = picRecords.map(p => p.kode_depo)
-      return { kode_plant: { [Op.in]: kodeDepos } }
-    }
-    return {}
-  }
+// const buildFilter = async (level, results, depoKode, names) => {
+//   if (level === 1 || level === 2 || level === 3) {
+//     if (results.pic && results.pic !== 'all') {
+//       const picRecords = await pic.findAll({
+//         where: { pic: { [Op.like]: `%${results.pic}%` } }
+//       })
+//       const kodeDepos = picRecords.map(p => p.kode_depo)
+//       return { kode_plant: { [Op.in]: kodeDepos } }
+//     }
+//     if (results.kode_plant && results.kode_plant !== 'all') {
+//       return { kode_plant: results.kode_plant }
+//     }
+//     if (results.spv) {
+//       const picRecords = await pic.findAll({
+//         where: { spv: { [Op.like]: `%${results.spv}%` } }
+//       })
+//       const kodeDepos = picRecords.map(p => p.kode_depo)
+//       return { kode_plant: { [Op.in]: kodeDepos } }
+//     }
+//     return {}
+//   }
 
-  if (level === 4 || level === 5) {
-    return { kode_plant: depoKode }
-  }
+//   if (level === 4 || level === 5) {
+//     return { kode_plant: depoKode }
+//   }
 
-  return {}
-}
+//   return {}
+// }
 
 const buildHeader = (dokumenNames) => {
   const first = [
@@ -57,70 +57,70 @@ const buildHeader = (dokumenNames) => {
   return first.concat(dokumenNames, last)
 }
 
-const buildBody = (sa, dokumenNames) => {
-  const rows = []
+// const buildBody = (sa, dokumenNames) => {
+//   const rows = []
 
-  sa.forEach((item, index) => {
-    const totalDoc = dokumenNames.length // total dokumen per depo
+//   sa.forEach((item, index) => {
+//     const totalDoc = dokumenNames.length // total dokumen per depo
 
-    if (item.active?.length) {
-      item.active.forEach((act, idx) => {
-        const row = []
-        row.push(`${index + 1}.${idx + 1}`)
-        row.push(moment(act.createdAt).format('LL'))
-        row.push(item.nama_depo)
-        row.push(item.kode_plant)
-        row.push(item.profit_center)
-        row.push(item.kode_sap_1)
-        row.push(item.status_depo)
+//     if (item.active?.length) {
+//       item.active.forEach((act, idx) => {
+//         const row = []
+//         row.push(`${index + 1}.${idx + 1}`)
+//         row.push(moment(act.createdAt).format('LL'))
+//         row.push(item.nama_depo)
+//         row.push(item.kode_plant)
+//         row.push(item.profit_center)
+//         row.push(item.kode_sap_1)
+//         row.push(item.status_depo)
 
-        let progress = 0
+//         let progress = 0
 
-        for (const nama of dokumenNames) {
-          const docMatch = act.doc?.find(d => d.dokumen === nama)
-          if (docMatch) {
-            if (docMatch.status_dokumen === 3 || docMatch.status_dokumen === 5) {
-              progress++ // dihitung tiap activity
-            }
-            row.push(
-              docMatch.status_dokumen === 3
-                ? moment(docMatch.createdAt).format('LLL')
-                : docMatch.status_dokumen === 5
-                  ? `Telat (${moment(docMatch.createdAt).format('LLL')})`
-                  : '-'
-            )
-          } else {
-            row.push('-')
-          }
-        }
+//         for (const nama of dokumenNames) {
+//           const docMatch = act.doc?.find(d => d.dokumen === nama)
+//           if (docMatch) {
+//             if (docMatch.status_dokumen === 3 || docMatch.status_dokumen === 5) {
+//               progress++ // dihitung tiap activity
+//             }
+//             row.push(
+//               docMatch.status_dokumen === 3
+//                 ? moment(docMatch.createdAt).format('LLL')
+//                 : docMatch.status_dokumen === 5
+//                   ? `Telat (${moment(docMatch.createdAt).format('LLL')})`
+//                   : '-'
+//             )
+//           } else {
+//             row.push('-')
+//           }
+//         }
 
-        const percent = totalDoc > 0 ? `${Math.round((progress / totalDoc) * 100)}%` : '0%'
-        row.push(totalDoc, progress, percent)
+//         const percent = totalDoc > 0 ? `${Math.round((progress / totalDoc) * 100)}%` : '0%'
+//         row.push(totalDoc, progress, percent)
 
-        rows.push(row)
-      })
-    } else {
-      // activity kosong
-      const row = []
-      row.push(index + 1)
-      row.push('-')
-      row.push(item.nama_depo)
-      row.push(item.kode_plant)
-      row.push(item.profit_center)
-      row.push(item.kode_sap_1)
-      row.push(item.status_depo)
+//         rows.push(row)
+//       })
+//     } else {
+//       // activity kosong
+//       const row = []
+//       row.push(index + 1)
+//       row.push('-')
+//       row.push(item.nama_depo)
+//       row.push(item.kode_plant)
+//       row.push(item.profit_center)
+//       row.push(item.kode_sap_1)
+//       row.push(item.status_depo)
 
-      for (const nama of dokumenNames) { // eslint-disable-line
-        row.push('-')
-      }
+//       for (const nama of dokumenNames) { // eslint-disable-line
+//         row.push('-')
+//       }
 
-      row.push(totalDoc, 0, '0%')
-      rows.push(row)
-    }
-  })
+//       row.push(totalDoc, 0, '0%')
+//       rows.push(row)
+//     }
+//   })
 
-  return rows
-}
+//   return rows
+// }
 
 module.exports = {
   getDashboard: async (req, res) => {
@@ -2026,1253 +2026,6 @@ module.exports = {
     }
   },
   reportDokumenOld: async (req, res) => {
-    // try {
-    const level = req.user.level
-    const depoKode = req.user.kode
-    const { from, to, tipe } = req.query
-    let tipeValue = ''
-    let timeFrom = ''
-    let timeTo = ''
-    if (typeof from === 'object') {
-      timeFrom = Object.values(from)[0]
-    } else {
-      timeFrom = from || ''
-    }
-    if (typeof to === 'object') {
-      timeTo = Object.values(to)[0]
-    } else {
-      timeTo = to || ''
-    }
-    if (typeof tipe === 'object') {
-      tipeValue = Object.values(tipe)[0]
-    } else {
-      tipeValue = tipe || 'daily'
-    }
-    let now = timeFrom === '' ? new Date(moment().format('YYYY-MM-DD')) : new Date(moment(timeFrom).format('YYYY-MM-DD'))
-    let tomo = timeTo === '' ? new Date(moment().format('YYYY-MM-DD 24:00:00')) : new Date(moment(timeTo).format('YYYY-MM-DD 24:00:00'))
-    if (tipeValue === 'monthly') {
-      now = new Date(moment(timeFrom).startOf('month').format('YYYY-MM-DD'))
-      tomo = new Date(moment(timeTo).endOf('month').format('YYYY-MM-DD'))
-    }
-    const schema = joi.object({
-      kode_plant: joi.string().allow(''),
-      pic: joi.string().allow(''),
-      spv: joi.string().allow('')
-    })
-    const { value: results, error } = schema.validate(req.body)
-    if (error) {
-      return response(res, 'Error', { error: error.message }, 404, false)
-    } else {
-      const first = ['No', 'GROM', 'PIC Acc', 'Kode Plant', 'Nama Area', 'Profit Center', 'Kode SAP 1', 'Status Depo']
-      const last = ['Total Laporan', 'Dokumen Yang Telah Diverifikasi', 'Persentase']
-      if (level === 1 || level === 2 || level === 3) {
-        if (results.pic !== '' && results.pic !== 'all') {
-          const findPic = await pic.findAll({
-            where: {
-              pic: { [Op.like]: `%${results.pic}%` }
-            }
-          })
-          if (findPic) {
-            const depos = []
-            findPic.map(x => {
-              return (
-                depos.push(x)
-              )
-            })
-            if (depos.length > 0) {
-              const sa = []
-              const kasir = []
-              for (let i = 0; i < depos.length; i++) {
-                const result = await depo.findAll({
-                  where: {
-                    kode_plant: depos[i].kode_depo
-                  },
-                  include: [
-                    {
-                      model: activity,
-                      as: 'active',
-                      where: {
-                        [Op.and]: [
-                          { kode_plant: depos[i].kode_depo },
-                          { jenis_dokumen: { [Op.like]: `%${tipeValue}%` } }
-                        ],
-                        createdAt: {
-                          [Op.lt]: tomo,
-                          [Op.gt]: now
-                        }
-                      },
-                      include: [
-                        {
-                          model: Path,
-                          as: 'doc',
-                          limit: 50
-                        }
-                      ]
-                    },
-                    {
-                      model: documents,
-                      as: 'dokumen',
-                      where: {
-                        jenis_dokumen: { [Op.like]: `%${tipeValue}%` }
-                      }
-                    }
-                  ]
-                })
-                if (result.length > 0) {
-                  sa.push(result[0])
-                }
-              }
-              if (kasir.length > 0 || sa.length > 0) {
-                const dokumen = await documents.findAll({
-                  where: {
-                    jenis_dokumen: { [Op.like]: `%${tipeValue}%` }
-                  }
-                })
-                if (dokumen.length > 0) {
-                  const resu = []
-                  dokumen.map(item => {
-                    return (
-                      resu.push(item.nama_dokumen)
-                    )
-                  })
-                  const obj = {}
-                  const resultDokumen = []
-                  resu.forEach(item => {
-                    if (!obj[item]) { obj[item] = 0 }
-                    obj[item] += 1
-                  })
-                  for (const prop in obj) {
-                    if (obj[prop] >= 2 || obj[prop] === 1) {
-                      resultDokumen.push(prop)
-                    }
-                  }
-                  const temp = []
-                  for (let i = 0; i < sa.length; i++) {
-                    for (let j = 0; j < sa[i].active.length; j++) {
-                      if (tipeValue === 'monthly') {
-                        temp.push(`${sa[i].kode_plant} ${moment(sa[i].active[j].createdAt).format('YYYY/MM')}`)
-                      } else {
-                        temp.push(`${sa[i].kode_plant} ${moment(sa[i].active[j].createdAt).format('YYYY/MM/DD')}`)
-                      }
-                    }
-                  }
-                  const object = {}
-                  const result = []
-                  temp.forEach(item => {
-                    if (!object[item]) { object[item] = 0 }
-                    object[item] += 1
-                  })
-                  for (const prop in object) {
-                    if (object[prop] >= 2 || object[prop] === 1) {
-                      result.push(prop)
-                    }
-                  }
-                  const dataSa = []
-                  for (let i = 0; i < result.length; i++) {
-                    const kode = result[i].split(' ')
-                    let begin = new Date(moment(kode[1]).format('YYYY-MM-DD'))
-                    let last = new Date(moment(kode[1]).format('YYYY-MM-DD 24:00:00'))
-                    if (tipeValue === 'monthly') {
-                      begin = new Date(moment(timeFrom).startOf('month').format('YYYY-MM-DD'))
-                      last = new Date(moment(timeTo).endOf('month').format('YYYY-MM-DD'))
-                    }
-                    const hasil = await depo.findAll({
-                      where: {
-                        kode_plant: kode[0]
-                      },
-                      include: [
-                        {
-                          model: activity,
-                          as: 'active',
-                          where: {
-                            [Op.and]: [
-                              { kode_plant: kode[0] },
-                              { jenis_dokumen: { [Op.like]: `%${tipeValue}%` } }
-                            ],
-                            createdAt: {
-                              [Op.lt]: last,
-                              [Op.gt]: begin
-                            }
-                          },
-                          include: [
-                            {
-                              model: Path,
-                              as: 'doc',
-                              limit: 50
-                            }
-                          ]
-                        },
-                        {
-                          model: documents,
-                          as: 'dokumen',
-                          where: {
-                            jenis_dokumen: { [Op.like]: `%${tipeValue}%` }
-                          }
-                        }
-                      ]
-                    })
-                    if (hasil.length > 0) {
-                      dataSa.push(hasil[0])
-                    }
-                  }
-                  const saBody = []
-                  for (let i = 0; i < dataSa.length; i++) {
-                    const temp = []
-                    temp.push(i + 1)
-                    temp.push(dataSa[i].nama_grom)
-                    temp.push(dataSa[i].nama_pic_1)
-                    temp.push(dataSa[i].kode_plant)
-                    temp.push(dataSa[i].nama_depo)
-                    temp.push(dataSa[i].profit_center)
-                    temp.push(dataSa[i].kode_sap_1)
-                    temp.push(dataSa[i].status_depo)
-                    for (let d = 0; d < resultDokumen.length; d++) {
-                      if (dataSa[i].active[0] !== undefined && dataSa[i].active[1] !== undefined) {
-                        if (dataSa[i].active[0].doc.length > 0 || dataSa[i].active[1].doc.length > 0) {
-                          const iter = dataSa[i].active[1] !== undefined ? dataSa[i].active[1].doc.length : 0
-                          const collect = []
-                          for (let j = 0; j < dataSa[i].active[0].doc.length; j++) {
-                            if (dataSa[i].active[0].doc[j].dokumen === resultDokumen[d]) {
-                              dataSa[i].active[0].doc[j].status_dokumen === 3
-                                ? collect.push(moment(dataSa[i].active[0].doc[j].createdAt).format('LLL'))
-                                : dataSa[i].active[0].doc[j].status_dokumen === 5
-                                  ? collect.push('Telat  ' + `(${moment(dataSa[i].active[0].doc[j].createdAt).format('LLL')})`)
-                                  : collect.push('-')
-                            }
-                          }
-                          for (let x = 0; x < iter; x++) {
-                            if (dataSa[i].active[1].doc[x].dokumen === resultDokumen[d]) {
-                              dataSa[i].active[1].doc[x].status_dokumen === 3
-                                ? collect.push(moment(dataSa[i].active[1].doc[x].createdAt).format('LLL'))
-                                : dataSa[i].active[1].doc[x].status_dokumen === 5
-                                  ? collect.push('Telat  ' + `(${moment(dataSa[i].active[1].doc[x].createdAt).format('LLL')})`)
-                                  : collect.push('-')
-                            }
-                          }
-                          if (collect.length > 0) {
-                            temp.push(collect[0])
-                          } else {
-                            temp.push('-')
-                          }
-                        } else {
-                          temp.push('-')
-                        }
-                      } else if (dataSa[i].active[0] !== undefined) {
-                        const collect = []
-                        for (let j = 0; j < dataSa[i].active[0].doc.length; j++) {
-                          if (dataSa[i].active[0].doc[j].dokumen === resultDokumen[d]) {
-                            dataSa[i].active[0].doc[j].status_dokumen === 3
-                              ? collect.push(moment(dataSa[i].active[0].doc[j].createdAt).format('LLL'))
-                              : dataSa[i].active[0].doc[j].status_dokumen === 5
-                                ? collect.push('Telat  ' + `(${moment(dataSa[i].active[0].doc[j].createdAt).format('LLL')})`)
-                                : collect.push('-')
-                          }
-                        }
-                        if (collect.length > 0) {
-                          temp.push(collect[0])
-                        } else {
-                          temp.push('-')
-                        }
-                      }
-                    }
-                    temp.push(dataSa[i].dokumen.length)
-                    if (dataSa[i].active[1] !== undefined) {
-                      temp.push(dataSa[i].active[0].progress + dataSa[i].active[1].progress)
-                      temp.push(Math.round(((dataSa[i].active[0].progress + dataSa[i].active[1].progress) / dataSa[i].dokumen.length) * 100) + '%')
-                    } else {
-                      temp.push(dataSa[i].active[0].progress)
-                      temp.push(Math.round((dataSa[i].active[0].progress / dataSa[i].dokumen.length) * 100) + '%')
-                    }
-                    saBody.push(temp)
-                  }
-                  const header = first.concat(resultDokumen, last)
-                  const body = [header, ...saBody]
-                  const wb = xlsx.utils.book_new()
-                  const name = new Date().getTime().toString().concat('.xlsx')
-                  wb.Props = {
-                    Title: 'Report',
-                    Author: 'Team Accounting',
-                    CreatedDate: new Date()
-                  }
-                  const ws = xlsx.utils.aoa_to_sheet(body)
-                  wb.Sheets['Sheet 1'] = ws
-                  xlsx.utils.book_append_sheet(wb, ws, 'Results')
-                  await xlsx.writeFile(wb, name, { type: 'file' })
-                  vs.move(name, `assets/exports/${name}`, function (err) {
-                    if (err) {
-                      throw err
-                    }
-                    console.log('success')
-                  })
-                  return response(res, 'success', { link: `${APP_URL}/download/${name}` })
-                } else {
-                  return response(res, 'list dokumen', { findPic, sa, kasir })
-                }
-              }
-            } else {
-              return response(res, 'depo not found', {}, 404, false)
-            }
-          } else {
-            return response(res, 'failed to get report', {}, 404, false)
-          }
-        } else if (results.kode_plant !== '' && results.kode_plant !== 'all') {
-          const sa = await depo.findAll({
-            where: {
-              kode_plant: results.kode_plant
-            },
-            include: [
-              {
-                model: activity,
-                as: 'active',
-                where: {
-                  [Op.and]: [
-                    { kode_plant: results.kode_plant },
-                    { jenis_dokumen: { [Op.like]: `%${tipeValue}%` } }
-                  ],
-                  createdAt: {
-                    [Op.lt]: tomo,
-                    [Op.gt]: now
-                  }
-                },
-                include: [
-                  {
-                    model: Path,
-                    as: 'doc',
-                    limit: 50
-                  }
-                ]
-              },
-              {
-                model: documents,
-                as: 'dokumen',
-                where: {
-                  jenis_dokumen: { [Op.like]: `%${tipeValue}%` }
-                }
-              }
-            ]
-          })
-          if (sa.length > 0) {
-            const dokumen = await documents.findAll({
-              where: {
-                jenis_dokumen: { [Op.like]: `%${tipeValue}%` }
-              }
-            })
-            if (dokumen.length > 0) {
-              const resu = []
-              dokumen.map(item => {
-                return (
-                  resu.push(item.nama_dokumen)
-                )
-              })
-              const obj = {}
-              const resultDokumen = []
-              resu.forEach(item => {
-                if (!obj[item]) { obj[item] = 0 }
-                obj[item] += 1
-              })
-              for (const prop in obj) {
-                if (obj[prop] >= 2 || obj[prop] === 1) {
-                  resultDokumen.push(prop)
-                }
-              }
-              const temp = []
-              for (let i = 0; i < sa.length; i++) {
-                for (let j = 0; j < sa[i].active.length; j++) {
-                  if (tipeValue === 'monthly') {
-                    temp.push(`${sa[i].kode_plant} ${moment(sa[i].active[j].createdAt).format('YYYY/MM')}`)
-                  } else {
-                    temp.push(`${sa[i].kode_plant} ${moment(sa[i].active[j].createdAt).format('YYYY/MM/DD')}`)
-                  }
-                }
-              }
-              const object = {}
-              const result = []
-              temp.forEach(item => {
-                if (!object[item]) { object[item] = 0 }
-                object[item] += 1
-              })
-              for (const prop in object) {
-                if (object[prop] >= 2 || object[prop] === 1) {
-                  result.push(prop)
-                }
-              }
-              const dataSa = []
-              for (let i = 0; i < result.length; i++) {
-                const kode = result[i].split(' ')
-                let begin = new Date(moment(kode[1]).format('YYYY-MM-DD'))
-                let last = new Date(moment(kode[1]).format('YYYY-MM-DD 24:00:00'))
-                if (tipeValue === 'monthly') {
-                  begin = new Date(moment(timeFrom).startOf('month').format('YYYY-MM-DD'))
-                  last = new Date(moment(timeTo).endOf('month').format('YYYY-MM-DD'))
-                }
-                const hasil = await depo.findAll({
-                  where: {
-                    kode_plant: kode[0]
-                  },
-                  include: [
-                    {
-                      model: activity,
-                      as: 'active',
-                      where: {
-                        [Op.and]: [
-                          { kode_plant: kode[0] },
-                          { jenis_dokumen: tipeValue }
-                        ],
-                        createdAt: {
-                          [Op.lt]: last,
-                          [Op.gt]: begin
-                        }
-                      },
-                      include: [
-                        {
-                          model: Path,
-                          as: 'doc',
-                          limit: 50
-                        }
-                      ]
-                    },
-                    {
-                      model: documents,
-                      as: 'dokumen',
-                      where: {
-                        jenis_dokumen: tipeValue
-                      }
-                    }
-                  ]
-                })
-                if (hasil.length > 0) {
-                  dataSa.push(hasil[0])
-                }
-              }
-              const saBody = []
-              for (let i = 0; i < dataSa.length; i++) {
-                const temp = []
-                temp.push(i + 1)
-                temp.push(dataSa[i].nama_grom)
-                temp.push(dataSa[i].nama_pic_1)
-                temp.push(dataSa[i].kode_plant)
-                temp.push(dataSa[i].nama_depo)
-                temp.push(dataSa[i].profit_center)
-                temp.push(dataSa[i].kode_sap_1)
-                temp.push(dataSa[i].status_depo)
-                for (let d = 0; d < resultDokumen.length; d++) {
-                  if (dataSa[i].active[0] !== undefined && dataSa[i].active[1] !== undefined) {
-                    if (dataSa[i].active[0].doc.length > 0 || dataSa[i].active[1].doc.length > 0) {
-                      const iter = dataSa[i].active[1] !== undefined ? dataSa[i].active[1].doc.length : 0
-                      const collect = []
-                      for (let j = 0; j < dataSa[i].active[0].doc.length; j++) {
-                        if (dataSa[i].active[0].doc[j].dokumen === resultDokumen[d]) {
-                          dataSa[i].active[0].doc[j].status_dokumen === 3
-                            ? collect.push(moment(dataSa[i].active[0].doc[j].createdAt).format('LLL'))
-                            : dataSa[i].active[0].doc[j].status_dokumen === 5
-                              ? collect.push('Telat  ' + `(${moment(dataSa[i].active[0].doc[j].createdAt).format('LLL')})`)
-                              : collect.push('-')
-                        }
-                      }
-                      for (let x = 0; x < iter; x++) {
-                        if (dataSa[i].active[1].doc[x].dokumen === resultDokumen[d]) {
-                          dataSa[i].active[1].doc[x].status_dokumen === 3
-                            ? collect.push(moment(dataSa[i].active[1].doc[x].createdAt).format('LLL'))
-                            : dataSa[i].active[1].doc[x].status_dokumen === 5
-                              ? collect.push('Telat  ' + `(${moment(dataSa[i].active[1].doc[x].createdAt).format('LLL')})`)
-                              : collect.push('-')
-                        }
-                      }
-                      if (collect.length > 0) {
-                        temp.push(collect[0])
-                      } else {
-                        temp.push('-')
-                      }
-                    } else {
-                      temp.push('-')
-                    }
-                  } else if (dataSa[i].active[0] !== undefined) {
-                    const collect = []
-                    for (let j = 0; j < dataSa[i].active[0].doc.length; j++) {
-                      if (dataSa[i].active[0].doc[j].dokumen === resultDokumen[d]) {
-                        dataSa[i].active[0].doc[j].status_dokumen === 3
-                          ? collect.push(moment(dataSa[i].active[0].doc[j].createdAt).format('LLL'))
-                          : dataSa[i].active[0].doc[j].status_dokumen === 5
-                            ? collect.push('Telat  ' + `(${moment(dataSa[i].active[0].doc[j].createdAt).format('LLL')})`)
-                            : collect.push('-')
-                      }
-                    }
-                    if (collect.length > 0) {
-                      temp.push(collect[0])
-                    } else {
-                      temp.push('-')
-                    }
-                  }
-                }
-                temp.push(dataSa[i].dokumen.length)
-                if (dataSa[i].active[1] !== undefined) {
-                  temp.push(dataSa[i].active[0].progress + dataSa[i].active[1].progress)
-                  temp.push(Math.round(((dataSa[i].active[0].progress + dataSa[i].active[1].progress) / dataSa[i].dokumen.length) * 100) + '%')
-                } else {
-                  temp.push(dataSa[i].active[0].progress)
-                  temp.push(Math.round((dataSa[i].active[0].progress / dataSa[i].dokumen.length) * 100) + '%')
-                }
-                saBody.push(temp)
-              }
-              const header = first.concat(resultDokumen, last)
-              const body = [header, ...saBody]
-              const wb = xlsx.utils.book_new()
-              const name = new Date().getTime().toString().concat('.xlsx')
-              wb.Props = {
-                Title: 'Report',
-                Author: 'Team Accounting',
-                CreatedDate: new Date()
-              }
-              const ws = xlsx.utils.aoa_to_sheet(body)
-              wb.Sheets['Sheet 1'] = ws
-              xlsx.utils.book_append_sheet(wb, ws, 'Results')
-              await xlsx.writeFile(wb, name, { type: 'file' })
-              vs.move(name, `assets/exports/${name}`, function (err) {
-                if (err) {
-                  throw err
-                }
-                console.log('success')
-              })
-              return response(res, 'success', { link: `${APP_URL}/download/${name}` })
-            } else {
-              return response(res, 'failed to get report', {}, 404, false)
-            }
-          } else {
-            return response(res, 'failed to get report', {}, 404, false)
-          }
-        } else if (results.kode_plant === 'all' || results.pic === 'all') {
-          const findPic = await pic.findAll()
-          if (findPic) {
-            const depos = []
-            findPic.map(x => {
-              return (
-                depos.push(x)
-              )
-            })
-            if (depos.length > 0) {
-              const sa = []
-              const kasir = []
-              for (let i = 0; i < depos.length; i++) {
-                const result = await depo.findAll({
-                  where: {
-                    kode_plant: depos[i].kode_depo
-                  },
-                  include: [
-                    {
-                      model: activity,
-                      as: 'active',
-                      where: {
-                        [Op.and]: [
-                          { kode_plant: depos[i].kode_depo },
-                          { jenis_dokumen: { [Op.like]: `%${tipeValue}%` } }
-                        ],
-                        createdAt: {
-                          [Op.lt]: tomo,
-                          [Op.gt]: now
-                        }
-                      },
-                      include: [
-                        {
-                          model: Path,
-                          as: 'doc',
-                          limit: 50
-                        }
-                      ]
-                    },
-                    {
-                      model: documents,
-                      as: 'dokumen',
-                      where: {
-                        jenis_dokumen: { [Op.like]: `%${tipeValue}%` }
-                      }
-                    }
-                  ]
-                })
-                if (result.length > 0) {
-                  sa.push(result[0])
-                }
-              }
-              if (kasir.length > 0 || sa.length > 0) {
-                const dokumen = await documents.findAll({
-                  where: {
-                    jenis_dokumen: { [Op.like]: `%${tipeValue}%` }
-                  }
-                })
-                if (dokumen.length > 0) {
-                  const resu = []
-                  dokumen.map(item => {
-                    return (
-                      resu.push(item.nama_dokumen)
-                    )
-                  })
-                  const obj = {}
-                  const resultDokumen = []
-                  resu.forEach(item => {
-                    if (!obj[item]) { obj[item] = 0 }
-                    obj[item] += 1
-                  })
-                  for (const prop in obj) {
-                    if (obj[prop] >= 2 || obj[prop] === 1) {
-                      resultDokumen.push(prop)
-                    }
-                  }
-                  const temp = []
-                  for (let i = 0; i < sa.length; i++) {
-                    for (let j = 0; j < sa[i].active.length; j++) {
-                      if (tipeValue === 'monthly') {
-                        temp.push(`${sa[i].kode_plant} ${moment(sa[i].active[j].createdAt).format('YYYY/MM')}`)
-                      } else {
-                        temp.push(`${sa[i].kode_plant} ${moment(sa[i].active[j].createdAt).format('YYYY/MM/DD')}`)
-                      }
-                    }
-                  }
-                  const object = {}
-                  const result = []
-                  temp.forEach(item => {
-                    if (!object[item]) { object[item] = 0 }
-                    object[item] += 1
-                  })
-                  for (const prop in object) {
-                    if (object[prop] >= 2 || object[prop] === 1) {
-                      result.push(prop)
-                    }
-                  }
-                  const dataSa = []
-                  for (let i = 0; i < result.length; i++) {
-                    const kode = result[i].split(' ')
-                    let begin = new Date(moment(kode[1]).format('YYYY-MM-DD'))
-                    let last = new Date(moment(kode[1]).format('YYYY-MM-DD 24:00:00'))
-                    if (tipeValue === 'monthly') {
-                      begin = new Date(moment(timeFrom).startOf('month').format('YYYY-MM-DD'))
-                      last = new Date(moment(timeTo).endOf('month').format('YYYY-MM-DD'))
-                    }
-                    const hasil = await depo.findAll({
-                      where: {
-                        kode_plant: kode[0]
-                      },
-                      include: [
-                        {
-                          model: activity,
-                          as: 'active',
-                          where: {
-                            [Op.and]: [
-                              { kode_plant: kode[0] },
-                              { jenis_dokumen: { [Op.like]: `%${tipeValue}%` } }
-                            ],
-                            createdAt: {
-                              [Op.lt]: last,
-                              [Op.gt]: begin
-                            }
-                          },
-                          include: [
-                            {
-                              model: Path,
-                              as: 'doc',
-                              limit: 50
-                            }
-                          ]
-                        },
-                        {
-                          model: documents,
-                          as: 'dokumen',
-                          where: {
-                            jenis_dokumen: { [Op.like]: `%${tipeValue}%` }
-                          }
-                        }
-                      ]
-                    })
-                    if (hasil.length > 0) {
-                      dataSa.push(hasil[0])
-                    }
-                  }
-                  const saBody = []
-                  for (let i = 0; i < dataSa.length; i++) {
-                    const temp = []
-                    temp.push(i + 1)
-                    temp.push(dataSa[i].nama_grom)
-                    temp.push(dataSa[i].nama_pic_1)
-                    temp.push(dataSa[i].kode_plant)
-                    temp.push(dataSa[i].nama_depo)
-                    temp.push(dataSa[i].profit_center)
-                    temp.push(dataSa[i].kode_sap_1)
-                    temp.push(dataSa[i].status_depo)
-                    for (let d = 0; d < resultDokumen.length; d++) {
-                      if (dataSa[i].active[0] !== undefined && dataSa[i].active[1] !== undefined) {
-                        if (dataSa[i].active[0].doc.length > 0 || dataSa[i].active[1].doc.length > 0) {
-                          const iter = dataSa[i].active[1] !== undefined ? dataSa[i].active[1].doc.length : 0
-                          const collect = []
-                          for (let j = 0; j < dataSa[i].active[0].doc.length; j++) {
-                            if (dataSa[i].active[0].doc[j].dokumen === resultDokumen[d]) {
-                              dataSa[i].active[0].doc[j].status_dokumen === 3
-                                ? collect.push(moment(dataSa[i].active[0].doc[j].createdAt).format('LLL'))
-                                : dataSa[i].active[0].doc[j].status_dokumen === 5
-                                  ? collect.push('Telat  ' + `(${moment(dataSa[i].active[0].doc[j].createdAt).format('LLL')})`)
-                                  : collect.push('-')
-                            }
-                          }
-                          for (let x = 0; x < iter; x++) {
-                            if (dataSa[i].active[1].doc[x].dokumen === resultDokumen[d]) {
-                              dataSa[i].active[1].doc[x].status_dokumen === 3
-                                ? collect.push(moment(dataSa[i].active[1].doc[x].createdAt).format('LLL'))
-                                : dataSa[i].active[1].doc[x].status_dokumen === 5
-                                  ? collect.push('Telat  ' + `(${moment(dataSa[i].active[1].doc[x].createdAt).format('LLL')})`)
-                                  : collect.push('-')
-                            }
-                          }
-                          if (collect.length > 0) {
-                            temp.push(collect[0])
-                          } else {
-                            temp.push('-')
-                          }
-                        } else {
-                          temp.push('-')
-                        }
-                      } else if (dataSa[i].active[0] !== undefined) {
-                        const collect = []
-                        for (let j = 0; j < dataSa[i].active[0].doc.length; j++) {
-                          if (dataSa[i].active[0].doc[j].dokumen === resultDokumen[d]) {
-                            dataSa[i].active[0].doc[j].status_dokumen === 3
-                              ? collect.push(moment(dataSa[i].active[0].doc[j].createdAt).format('LLL'))
-                              : dataSa[i].active[0].doc[j].status_dokumen === 5
-                                ? collect.push('Telat  ' + `(${moment(dataSa[i].active[0].doc[j].createdAt).format('LLL')})`)
-                                : collect.push('-')
-                          }
-                        }
-                        if (collect.length > 0) {
-                          temp.push(collect[0])
-                        } else {
-                          temp.push('-')
-                        }
-                      }
-                    }
-                    temp.push(dataSa[i].dokumen.length)
-                    if (dataSa[i].active[1] !== undefined) {
-                      temp.push(dataSa[i].active[0].progress + dataSa[i].active[1].progress)
-                      temp.push(Math.round(((dataSa[i].active[0].progress + dataSa[i].active[1].progress) / dataSa[i].dokumen.length) * 100) + '%')
-                    } else {
-                      temp.push(dataSa[i].active[0].progress)
-                      temp.push(Math.round((dataSa[i].active[0].progress / dataSa[i].dokumen.length) * 100) + '%')
-                    }
-                    saBody.push(temp)
-                  }
-                  const header = first.concat(resultDokumen, last)
-                  const body = [header, ...saBody]
-                  const wb = xlsx.utils.book_new()
-                  const name = new Date().getTime().toString().concat('.xlsx')
-                  wb.Props = {
-                    Title: 'Report',
-                    Author: 'Team Accounting',
-                    CreatedDate: new Date()
-                  }
-                  const ws = xlsx.utils.aoa_to_sheet(body)
-                  wb.Sheets['Sheet 1'] = ws
-                  xlsx.utils.book_append_sheet(wb, ws, 'Results')
-                  await xlsx.writeFile(wb, name, { type: 'file' })
-                  vs.move(name, `assets/exports/${name}`, function (err) {
-                    if (err) {
-                      throw err
-                    }
-                    console.log('success')
-                  })
-                  return response(res, 'success', { link: `${APP_URL}/download/${name}` })
-                } else {
-                  return response(res, 'list dokumen', { findPic, sa, kasir })
-                }
-              }
-            } else {
-              return response(res, 'depo not found', {}, 404, false)
-            }
-          } else {
-            return response(res, 'failed to get report', {}, 404, false)
-          }
-        } else if (results.spv !== '') {
-          const findPic = await pic.findAll({
-            where: {
-              spv: { [Op.like]: `%${results.spv}%` }
-            }
-          })
-          if (findPic) {
-            const depos = []
-            findPic.map(x => {
-              return (
-                depos.push(x)
-              )
-            })
-            if (depos.length > 0) {
-              const sa = []
-              const kasir = []
-              for (let i = 0; i < depos.length; i++) {
-                const result = await depo.findAll({
-                  where: {
-                    kode_plant: depos[i].kode_depo
-                  },
-                  include: [
-                    {
-                      model: activity,
-                      as: 'active',
-                      where: {
-                        [Op.and]: [
-                          { kode_plant: depos[i].kode_depo },
-                          { jenis_dokumen: { [Op.like]: `%${tipeValue}%` } }
-                        ],
-                        createdAt: {
-                          [Op.lt]: tomo,
-                          [Op.gt]: now
-                        }
-                      },
-                      include: [
-                        {
-                          model: Path,
-                          as: 'doc',
-                          limit: 50
-                        }
-                      ]
-                    },
-                    {
-                      model: documents,
-                      as: 'dokumen',
-                      where: {
-                        jenis_dokumen: { [Op.like]: `%${tipeValue}%` }
-                      }
-                    }
-                  ]
-                })
-                if (result.length > 0) {
-                  sa.push(result[0])
-                }
-              }
-              if (kasir.length > 0 || sa.length > 0) {
-                const dokumen = await documents.findAll({
-                  where: {
-                    jenis_dokumen: { [Op.like]: `%${tipeValue}%` }
-                  }
-                })
-                if (dokumen.length > 0) {
-                  const resu = []
-                  dokumen.map(item => {
-                    return (
-                      resu.push(item.nama_dokumen)
-                    )
-                  })
-                  const obj = {}
-                  const resultDokumen = []
-                  resu.forEach(item => {
-                    if (!obj[item]) { obj[item] = 0 }
-                    obj[item] += 1
-                  })
-                  for (const prop in obj) {
-                    if (obj[prop] >= 2 || obj[prop] === 1) {
-                      resultDokumen.push(prop)
-                    }
-                  }
-                  const temp = []
-                  for (let i = 0; i < sa.length; i++) {
-                    for (let j = 0; j < sa[i].active.length; j++) {
-                      if (tipeValue === 'monthly') {
-                        temp.push(`${sa[i].kode_plant} ${moment(sa[i].active[j].createdAt).format('YYYY/MM')}`)
-                      } else {
-                        temp.push(`${sa[i].kode_plant} ${moment(sa[i].active[j].createdAt).format('YYYY/MM/DD')}`)
-                      }
-                    }
-                  }
-                  const object = {}
-                  const result = []
-                  temp.forEach(item => {
-                    if (!object[item]) { object[item] = 0 }
-                    object[item] += 1
-                  })
-                  for (const prop in object) {
-                    if (object[prop] >= 2 || object[prop] === 1) {
-                      result.push(prop)
-                    }
-                  }
-                  const dataSa = []
-                  for (let i = 0; i < result.length; i++) {
-                    const kode = result[i].split(' ')
-                    let begin = new Date(moment(kode[1]).format('YYYY-MM-DD'))
-                    let last = new Date(moment(kode[1]).format('YYYY-MM-DD 24:00:00'))
-                    if (tipeValue === 'monthly') {
-                      begin = new Date(moment(timeFrom).startOf('month').format('YYYY-MM-DD'))
-                      last = new Date(moment(timeTo).endOf('month').format('YYYY-MM-DD'))
-                    }
-                    const hasil = await depo.findAll({
-                      where: {
-                        kode_plant: kode[0]
-                      },
-                      include: [
-                        {
-                          model: activity,
-                          as: 'active',
-                          where: {
-                            [Op.and]: [
-                              { kode_plant: kode[0] },
-                              { jenis_dokumen: { [Op.like]: `%${tipeValue}%` } }
-                            ],
-                            createdAt: {
-                              [Op.lt]: last,
-                              [Op.gt]: begin
-                            }
-                          },
-                          include: [
-                            {
-                              model: Path,
-                              as: 'doc',
-                              limit: 50
-                            }
-                          ]
-                        },
-                        {
-                          model: documents,
-                          as: 'dokumen',
-                          where: {
-                            jenis_dokumen: { [Op.like]: `%${tipeValue}%` }
-                          }
-                        }
-                      ]
-                    })
-                    if (hasil.length > 0) {
-                      dataSa.push(hasil[0])
-                    }
-                  }
-                  const saBody = []
-                  for (let i = 0; i < dataSa.length; i++) {
-                    const temp = []
-                    temp.push(i + 1)
-                    temp.push(dataSa[i].nama_grom)
-                    temp.push(dataSa[i].nama_pic_1)
-                    temp.push(dataSa[i].kode_plant)
-                    temp.push(dataSa[i].nama_depo)
-                    temp.push(dataSa[i].profit_center)
-                    temp.push(dataSa[i].kode_sap_1)
-                    temp.push(dataSa[i].status_depo)
-                    for (let d = 0; d < resultDokumen.length; d++) {
-                      if (dataSa[i].active[0] !== undefined && dataSa[i].active[1] !== undefined) {
-                        if (dataSa[i].active[0].doc.length > 0 || dataSa[i].active[1].doc.length > 0) {
-                          const iter = dataSa[i].active[1] !== undefined ? dataSa[i].active[1].doc.length : 0
-                          const collect = []
-                          for (let j = 0; j < dataSa[i].active[0].doc.length; j++) {
-                            if (dataSa[i].active[0].doc[j].dokumen === resultDokumen[d]) {
-                              dataSa[i].active[0].doc[j].status_dokumen === 3
-                                ? collect.push(moment(dataSa[i].active[0].doc[j].createdAt).format('LLL'))
-                                : dataSa[i].active[0].doc[j].status_dokumen === 5
-                                  ? collect.push('Telat  ' + `(${moment(dataSa[i].active[0].doc[j].createdAt).format('LLL')})`)
-                                  : collect.push('-')
-                            }
-                          }
-                          for (let x = 0; x < iter; x++) {
-                            if (dataSa[i].active[1].doc[x].dokumen === resultDokumen[d]) {
-                              dataSa[i].active[1].doc[x].status_dokumen === 3
-                                ? collect.push(moment(dataSa[i].active[1].doc[x].createdAt).format('LLL'))
-                                : dataSa[i].active[1].doc[x].status_dokumen === 5
-                                  ? collect.push('Telat  ' + `(${moment(dataSa[i].active[1].doc[x].createdAt).format('LLL')})`)
-                                  : collect.push('-')
-                            }
-                          }
-                          if (collect.length > 0) {
-                            temp.push(collect[0])
-                          } else {
-                            temp.push('-')
-                          }
-                        } else {
-                          temp.push('-')
-                        }
-                      } else if (dataSa[i].active[0] !== undefined) {
-                        const collect = []
-                        for (let j = 0; j < dataSa[i].active[0].doc.length; j++) {
-                          if (dataSa[i].active[0].doc[j].dokumen === resultDokumen[d]) {
-                            dataSa[i].active[0].doc[j].status_dokumen === 3
-                              ? collect.push(moment(dataSa[i].active[0].doc[j].createdAt).format('LLL'))
-                              : dataSa[i].active[0].doc[j].status_dokumen === 5
-                                ? collect.push('Telat  ' + `(${moment(dataSa[i].active[0].doc[j].createdAt).format('LLL')})`)
-                                : collect.push('-')
-                          }
-                        }
-                        if (collect.length > 0) {
-                          temp.push(collect[0])
-                        } else {
-                          temp.push('-')
-                        }
-                      }
-                    }
-                    temp.push(dataSa[i].dokumen.length)
-                    if (dataSa[i].active[1] !== undefined) {
-                      temp.push(dataSa[i].active[0].progress + dataSa[i].active[1].progress)
-                      temp.push(Math.round(((dataSa[i].active[0].progress + dataSa[i].active[1].progress) / dataSa[i].dokumen.length) * 100) + '%')
-                    } else {
-                      temp.push(dataSa[i].active[0].progress)
-                      temp.push(Math.round((dataSa[i].active[0].progress / dataSa[i].dokumen.length) * 100) + '%')
-                    }
-                    saBody.push(temp)
-                  }
-                  const header = first.concat(resultDokumen, last)
-                  const body = [header, ...saBody]
-                  const wb = xlsx.utils.book_new()
-                  const name = new Date().getTime().toString().concat('.xlsx')
-                  wb.Props = {
-                    Title: 'Report',
-                    Author: 'Team Accounting',
-                    CreatedDate: new Date()
-                  }
-                  const ws = xlsx.utils.aoa_to_sheet(body)
-                  wb.Sheets['Sheet 1'] = ws
-                  xlsx.utils.book_append_sheet(wb, ws, 'Results')
-                  await xlsx.writeFile(wb, name, { type: 'file' })
-                  vs.move(name, `assets/exports/${name}`, function (err) {
-                    if (err) {
-                      throw err
-                    }
-                    console.log('success')
-                  })
-                  return response(res, 'success', { link: `${APP_URL}/download/${name}` })
-                } else {
-                  return response(res, 'list dokumen', { findPic, sa, kasir })
-                }
-              }
-            } else {
-              return response(res, 'depo not found', {}, 404, false)
-            }
-          } else {
-            return response(res, 'failed to get report', {}, 404, false)
-          }
-        }
-      } else if (level === 4) {
-        const sa = await depo.findAll({
-          where: {
-            kode_plant: depoKode
-          },
-          include: [
-            {
-              model: activity,
-              as: 'active',
-              where: {
-                [Op.and]: [
-                  { kode_plant: depoKode },
-                  { jenis_dokumen: { [Op.like]: `%${tipeValue}%` } },
-                  { tipe: 'sa' }
-                ],
-                createdAt: {
-                  [Op.lt]: tomo,
-                  [Op.gt]: now
-                }
-              },
-              include: [
-                {
-                  model: Path,
-                  as: 'doc',
-                  limit: 50
-                }
-              ]
-            },
-            {
-              model: documents,
-              as: 'dokumen',
-              where: {
-                [Op.and]: [
-                  { jenis_dokumen: { [Op.like]: `%${tipeValue}%` } },
-                  { uploadedBy: 'sa' }
-                ]
-              }
-            }
-          ]
-        })
-        if (sa.length > 0) {
-          const data = []
-          sa.map(item => {
-            return (
-              data.push(item.dokumen.length)
-            )
-          })
-          const resu = []
-          for (let i = 1; i <= Math.max(...data); i++) {
-            resu.push(`${i}`)
-          }
-          const saBody = []
-          for (let i = 0; i < sa.length; i++) {
-            for (let j = 0; j < sa[i].active.length; j++) {
-              const temp = []
-              temp.push(sa[i].active.indexOf(sa[i].active[j]) + 1)
-              temp.push(sa[i].nama_depo)
-              temp.push(sa[i].kode_plant)
-              temp.push(sa[i].profit_center)
-              temp.push(sa[i].kode_sap_1)
-              temp.push(sa[i].status_depo)
-              temp.push(moment(sa[i].active[j].documentDate).format('DD MMMM YYYY'))
-              temp.push(moment(sa[i].active[j].createdAt).format('DD MMMM YYYY'))
-              for (let d = 0; d < resu.length; d++) {
-                const go = sa[i].dokumen[d] === undefined ? 'a' : sa[i].dokumen[d].nama_dokumen
-                if (sa[i].active[j].doc.length > 0) {
-                  if (sa[i].active[j].doc[d] !== undefined) {
-                    sa[i].active[j].doc.find(({ dokumen }) => dokumen === go) !== undefined
-                      ? temp.push(sa[i].active[j].doc[d].status_dokumen === 1 ? 'O' : sa[i].active[j].doc[d].status_dokumen === 0 ? 'X' : sa[i].active[j].doc[d].status_dokumen === 3 ? 'V' : sa[i].active[j].doc[d].status_dokumen === 2 ? 'O' : sa[i].active[j].doc[d].status_dokumen === 4 ? 'Telat kirim' : '-')
-                      : temp.push('-')
-                  } else {
-                    temp.push('-')
-                  }
-                } else {
-                  temp.push('-')
-                }
-              }
-              temp.push(sa[i].dokumen.length)
-              temp.push(Math.round((sa[i].active[j].progress / sa[i].dokumen.length) * 100) + '%')
-              if (sa[i].active[j].doc.length === 0) {
-                temp.push('Belum Upload')
-              } else {
-                temp.push(((sa[i].active[j].progress / sa[i].dokumen.length) * 100) === 100 ? 'Done' : ((sa[i].active[j].progress / sa[i].dokumen.length) * 100) < 100 ? 'Kurang Upload' : '')
-              }
-              temp.push(tipeValue)
-              temp.push(sa[i].active[j].tipe)
-              saBody.push(temp)
-            }
-          }
-          const first = ['No', 'Nama Depo', 'Kode Plant', 'Profit Center', 'Kode SAP 1', 'Status Depo', 'Tanggal Dokumen', 'Tanggal Upload']
-          const last = ['Jumlah File Upload', 'Persentase', 'Status', 'Jenis Dokumen', 'Uploaded By']
-          const header = first.concat(resu, last)
-          const body = [header, ...saBody]
-          const wb = xlsx.utils.book_new()
-          const name = new Date().getTime().toString().concat('.xlsx')
-          wb.Props = {
-            Title: 'Report',
-            Author: 'Team Accounting',
-            CreatedDate: new Date()
-          }
-          const ws = xlsx.utils.aoa_to_sheet(body)
-          wb.Sheets['Sheet 1'] = ws
-          xlsx.utils.book_append_sheet(wb, ws, 'Results')
-          await xlsx.writeFile(wb, name, { type: 'file' })
-          vs.move(name, `assets/exports/${name}`, function (err) {
-            if (err) {
-              throw err
-            }
-            console.log('success')
-          })
-          return response(res, 'success', { link: `${APP_URL}/download/${name}` })
-        } else {
-          return response(res, 'failed to get report', {}, 404, false)
-        }
-      } else if (level === 5) {
-        const kasir = await depo.findAll({
-          where: {
-            kode_plant: depoKode
-          },
-          include: [
-            {
-              model: activity,
-              as: 'active',
-              where: {
-                [Op.and]: [
-                  { kode_plant: depoKode },
-                  { jenis_dokumen: { [Op.like]: `%${tipeValue}%` } },
-                  { tipe: 'kasir' }
-                ],
-                createdAt: {
-                  [Op.lt]: tomo,
-                  [Op.gt]: now
-                }
-              },
-              include: [
-                {
-                  model: Path,
-                  as: 'doc',
-                  limit: 50
-                }
-              ]
-            },
-            {
-              model: documents,
-              as: 'dokumen',
-              where: {
-                [Op.and]: [
-                  { jenis_dokumen: { [Op.like]: `%${tipeValue}%` } },
-                  { uploadedBy: 'kasir' }
-                ]
-              }
-            }
-          ]
-        })
-        if (kasir.length > 0) {
-          const data = []
-          kasir.map(item => {
-            return (
-              data.push(item.dokumen.length)
-            )
-          })
-          const resu = []
-          for (let i = 1; i <= Math.max(...data); i++) {
-            resu.push(`${i}`)
-          }
-          const kasirBody = []
-          for (let i = 0; i < kasir.length; i++) {
-            data.push(kasir[i].dokumen.length)
-            for (let j = 0; j < kasir[i].active.length; j++) {
-              const temp = []
-              temp.push(kasir[i].active.indexOf(kasir[i].active[j]) + 1)
-              temp.push(kasir[i].nama_depo)
-              temp.push(kasir[i].kode_plant)
-              temp.push(kasir[i].profit_center)
-              temp.push(kasir[i].kode_sap_1)
-              temp.push(kasir[i].status_depo)
-              temp.push(moment(kasir[i].active[j].documentDate).format('DD MMMM YYYY'))
-              temp.push(moment(kasir[i].active[j].createdAt).format('DD MMMM YYYY'))
-              for (let d = 0; d < resu.length; d++) {
-                if (kasir[i].active[j].doc.length > 0) {
-                  const go = kasir[i].dokumen[d] === undefined ? 'a' : kasir[i].dokumen[d].nama_dokumen
-                  if (kasir[i].active[j].doc[d] !== undefined) {
-                    kasir[i].active[j].doc.find(({ dokumen }) => dokumen === go) !== undefined
-                      ? temp.push(kasir[i].active[j].doc[d].status_dokumen === 1 ? 'O' : kasir[i].active[j].doc[d].status_dokumen === 0 ? 'X' : kasir[i].active[j].doc[d].status_dokumen === 3 ? 'V' : kasir[i].active[j].doc[d].status_dokumen === 2 ? 'O' : kasir[i].active[j].doc[d].status_dokumen === 4 ? 'Telat kirim' : '')
-                      : temp.push('-')
-                  } else {
-                    temp.push('-')
-                  }
-                } else {
-                  temp.push('-')
-                }
-              }
-              temp.push(kasir[i].dokumen.length)
-              temp.push(Math.round((kasir[i].active[j].progress / kasir[i].dokumen.length) * 100) + '%')
-              if (kasir[i].active[j].doc.length === 0) {
-                temp.push('Belum Upload')
-              } else {
-                temp.push(((kasir[i].active[j].progress / kasir[i].dokumen.length) * 100) === 100 ? 'Done' : ((kasir[i].active[j].progress / kasir[i].dokumen.length) * 100) < 100 ? 'Kurang Upload' : '')
-              }
-              temp.push(tipeValue)
-              temp.push(kasir[i].active[j].tipe)
-              kasirBody.push(temp)
-            }
-          }
-          const first = ['No', 'Nama Depo', 'Kode Plant', 'Profit Center', 'Kode SAP 1', 'Status Depo', 'Tanggal Dokumen', 'Tanggal Upload']
-          const last = ['Jumlah File Upload', 'Persentase', 'Status', 'Jenis Dokumen', 'Uploaded By']
-          const header = first.concat(resu, last)
-          const body = [header, ...kasirBody]
-          const wb = xlsx.utils.book_new()
-          const name = new Date().getTime().toString().concat('.xlsx')
-          wb.Props = {
-            Title: 'Report',
-            Author: 'Team Accounting',
-            CreatedDate: new Date()
-          }
-          const ws = xlsx.utils.aoa_to_sheet(body)
-          wb.Sheets['Sheet 1'] = ws
-          xlsx.utils.book_append_sheet(wb, ws, 'Results')
-          await xlsx.writeFile(wb, name, { type: 'file' })
-          vs.move(name, `assets/exports/${name}`, function (err) {
-            if (err) {
-              throw err
-            }
-            console.log('success')
-          })
-          return response(res, 'success', { link: `${APP_URL}/download/${name}` })
-        } else {
-          return response(res, 'failed to get report', {}, 404, false)
-        }
-      } else {
-        return response(res, 'failed to get report', {}, 404, false)
-      }
-    }
-    // } catch (error) {
-    //   return response(res, error.message, {}, 500, false)
-    // }
-  },
-  reportDokumen: async (req, res) => {
     req.setTimeout(1000 * 60 * 30)
     try {
       const { level, kode: depoKode } = req.user
@@ -3453,6 +2206,142 @@ module.exports = {
         no++
       }
 
+      return response(res, 'success', { data: [header, ...body] })
+    } catch (err) {
+      return response(res, err.message, {}, 500, false)
+    }
+  },
+  reportDokumen: async (req, res) => {
+    req.setTimeout(1000 * 60 * 30) // 30 menit
+    try {
+      const { level, kode: depoKode } = req.user
+      const { from, to, tipe } = req.query
+
+      const timeFrom = from
+        ? moment(from).startOf('day').format('YYYY-MM-DD HH:mm:ss')
+        : moment().startOf('day').format('YYYY-MM-DD HH:mm:ss')
+      const timeTo = to
+        ? moment(to).endOf('day').format('YYYY-MM-DD HH:mm:ss')
+        : moment().endOf('day').format('YYYY-MM-DD HH:mm:ss')
+      const tipeValue = tipe || 'daily'
+
+      const schema = joi.object({
+        kode_plant: joi.string().allow(''),
+        pic: joi.string().allow(''),
+        spv: joi.string().allow('')
+      })
+      const { value: results, error } = schema.validate(req.body)
+      if (error) return response(res, 'Error', { error: error.message }, 400, false)
+
+      const replacements = { tipeValue, timeFrom, timeTo }
+
+      let filterClause = ''
+      if ([1, 2, 3].includes(level)) {
+        const conditions = []
+        if (results.pic && results.pic !== 'all') {
+          conditions.push('p.pic LIKE :picLike')
+          replacements.picLike = `%${results.pic}%`
+        }
+        if (results.spv && results.spv !== '') {
+          conditions.push('p.spv LIKE :spvLike')
+          replacements.spvLike = `%${results.spv}%`
+        }
+        if (results.kode_plant && results.kode_plant !== 'all') {
+          conditions.push('d.kode_plant = :kodePlant')
+          replacements.kodePlant = results.kode_plant
+        }
+        filterClause = conditions.length ? 'WHERE ' + conditions.join(' OR ') : ''
+      } else if ([4, 5].includes(level)) {
+        filterClause = 'WHERE d.kode_plant = :depoKode'
+        replacements.depoKode = depoKode
+      }
+
+      // Optimized query: ambil activities + paths + count dokumen per depo sekaligus
+      const mainQuery = `
+        SELECT
+          d.kode_plant,
+          d.nama_depo,
+          d.profit_center,
+          d.kode_sap_1,
+          d.status_depo,
+          a.id AS activity_id,
+          a.createdAt AS activity_date,
+          a.progress AS activity_progress,
+          JSON_ARRAYAGG(JSON_OBJECT(
+            'dokumen', path.dokumen,
+            'status_dokumen', path.status_dokumen,
+            'createdAt', path.createdAt
+          )) AS docs
+        FROM depos d
+        LEFT JOIN pics p ON p.kode_depo = d.kode_plant
+        LEFT JOIN activities a
+          ON a.kode_plant = d.kode_plant
+          AND a.jenis_dokumen = :tipeValue
+          AND a.createdAt BETWEEN :timeFrom AND :timeTo
+          AND a.progress > 0
+        LEFT JOIN Paths path ON path.activityId = a.id
+        ${filterClause}
+        GROUP BY d.kode_plant, a.id
+        ORDER BY d.nama_depo ASC, a.createdAt ASC
+      `
+
+      const rows = await sequelize.query(mainQuery, {
+        replacements,
+        type: sequelize.QueryTypes.SELECT
+      })
+
+      if (!rows.length) return response(res, 'Data not found', {}, 404, false)
+
+      // ambil dokumen unik + count per depo
+      const dokumenRows = await sequelize.query(
+        `SELECT d.kode_plant, nama_dokumen, COUNT(*) AS jumlah_dokumen
+         FROM documents doc
+         JOIN depos d ON doc.status_depo = d.status_depo
+         WHERE doc.jenis_dokumen = :tipeValue
+         GROUP BY d.kode_plant, nama_dokumen
+         ORDER BY d.kode_plant, nama_dokumen`,
+        { replacements, type: sequelize.QueryTypes.SELECT }
+      )
+
+      // build header & map dokumen count
+      const depoMap = {}
+      dokumenRows.forEach(r => {
+        if (!depoMap[r.kode_plant]) depoMap[r.kode_plant] = { dokumen_count: 0, dokumenNames: [] }
+        depoMap[r.kode_plant].dokumen_count += r.jumlah_dokumen
+        depoMap[r.kode_plant].dokumenNames.push(r.nama_dokumen)
+      })
+
+      // Mapping activities + docs (JSON_ARRAYAGG)
+      const body = []
+      let no = 1
+      rows.forEach(row => {
+        const docs = JSON.parse(row.docs || '[]')
+        const dokumenNames = depoMap[row.kode_plant]?.dokumenNames || []
+        let progressCount = 0
+        const rowData = []
+        rowData.push(no)
+        rowData.push(moment(row.activity_date).format('LL'))
+        rowData.push(row.nama_depo)
+        rowData.push(row.kode_plant)
+        rowData.push(row.profit_center)
+        rowData.push(row.kode_sap_1)
+        rowData.push(row.status_depo)
+
+        dokumenNames.forEach(nama => {
+          const doc = docs.find(d => d.dokumen === nama)
+          if (doc && (doc.status_dokumen === 3 || doc.status_dokumen === 5)) progressCount++
+          rowData.push(doc ? (doc.status_dokumen === 3 ? moment(doc.createdAt).format('LLL') : `Telat (${moment(doc.createdAt).format('LLL')})`) : '-')
+        })
+
+        const percent = depoMap[row.kode_plant]?.dokumen_count > 0
+          ? `${Math.round((progressCount / depoMap[row.kode_plant].dokumen_count) * 100)}%`
+          : '0%'
+        rowData.push(depoMap[row.kode_plant]?.dokumen_count || 0, progressCount, percent)
+        body.push(rowData)
+        no++
+      })
+
+      const header = buildHeader(Object.values(depoMap).flatMap(d => d.dokumenNames))
       return response(res, 'success', { data: [header, ...body] })
     } catch (err) {
       return response(res, err.message, {}, 500, false)
