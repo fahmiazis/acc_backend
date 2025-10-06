@@ -2212,7 +2212,7 @@ module.exports = {
     }
   },
   reportDokumen: async (req, res) => {
-    req.setTimeout(1000 * 60 * 30) // 30 menit
+    req.setTimeout(1000 * 60 * 30)
     try {
       const { level, kode: depoKode } = req.user
       const { from, to, tipe } = req.query
@@ -2225,6 +2225,7 @@ module.exports = {
         : moment().endOf('day').format('YYYY-MM-DD HH:mm:ss')
       const tipeValue = tipe || 'daily'
 
+      // Validasi body
       const schema = joi.object({
         kode_plant: joi.string().allow(''),
         pic: joi.string().allow(''),
@@ -2233,65 +2234,64 @@ module.exports = {
       const { value: results, error } = schema.validate(req.body)
       if (error) return response(res, 'Error', { error: error.message }, 400, false)
 
-      const replacements = { tipeValue, timeFrom, timeTo, depoKode }
-
-      // 1. Ambil semua depo dulu (≤500 row)
-      let depoQuery = 'SELECT * FROM depos ORDER BY nama_depo ASC'
-      if ([4, 5].includes(level)) {
-        depoQuery = 'SELECT * FROM depos WHERE kode_plant = :depoKode ORDER BY nama_depo ASC'
+      // 1️⃣ Ambil semua depo dulu
+      const depoFilter = {}
+      if ([1, 2, 3].includes(level)) {
+        if (results.kode_plant && results.kode_plant !== 'all') depoFilter.kode_plant = results.kode_plant
+      } else if ([4, 5].includes(level)) {
+        depoFilter.kode_plant = depoKode
       }
-      const depos = await sequelize.query(depoQuery, {
-        replacements,
-        type: sequelize.QueryTypes.SELECT
-      })
+      const depos = await depo.findAll({ where: depoFilter, raw: true })
 
       if (!depos.length) return response(res, 'Data not found', {}, 404, false)
 
-      // 2. Ambil semua dokumen (≤1000 row)
+      // 2️⃣ Ambil semua dokumen unik untuk header
       const dokumenRows = await sequelize.query(
-        `SELECT d.kode_plant, nama_dokumen, COUNT(*) AS jumlah_dokumen
-         FROM documents doc
-         JOIN depos d ON doc.status_depo = d.status_depo
-         WHERE doc.jenis_dokumen = :tipeValue
-         GROUP BY d.kode_plant, nama_dokumen
-         ORDER BY d.kode_plant, nama_dokumen`,
-        { replacements, type: sequelize.QueryTypes.SELECT }
+        'SELECT DISTINCT nama_dokumen FROM documents WHERE jenis_dokumen LIKE :tipeValue ORDER BY LOWER(nama_dokumen) ASC',
+        { replacements: { tipeValue: `%${tipeValue}%` }, type: sequelize.QueryTypes.SELECT }
       )
+      const dokumenNames = dokumenRows.map(r => r.nama_dokumen)
 
-      // 3. Mapping dokumen per depo
-      const depoMap = {}
-      dokumenRows.forEach(r => {
-        if (!depoMap[r.kode_plant]) depoMap[r.kode_plant] = { dokumen_count: 0, dokumenNames: [] }
-        depoMap[r.kode_plant].dokumen_count += r.jumlah_dokumen
-        depoMap[r.kode_plant].dokumenNames.push(r.nama_dokumen)
-      })
-
-      // 4. Ambil activities + paths per batch
-      const activities = await sequelize.query(
-        `SELECT a.id AS activity_id, a.kode_plant, a.createdAt AS activity_date, a.progress AS activity_progress,
+      // 3️⃣ Ambil semua activities + paths dalam range
+      const activityRows = await sequelize.query(
+        `SELECT a.id AS activity_id, a.kode_plant, a.createdAt AS activity_date, a.progress,
                 path.dokumen, path.status_dokumen, path.createdAt AS dokumen_created
          FROM activities a
          LEFT JOIN Paths path ON path.activityId = a.id
          WHERE a.jenis_dokumen = :tipeValue
-           AND a.createdAt BETWEEN :timeFrom AND :timeTo
-           AND a.progress > 0
-         ORDER BY a.kode_plant, a.createdAt`,
-        { replacements, type: sequelize.QueryTypes.SELECT }
+         AND a.createdAt BETWEEN :timeFrom AND :timeTo
+         AND a.progress > 0`,
+        { replacements: { tipeValue, timeFrom, timeTo }, type: sequelize.QueryTypes.SELECT }
       )
 
-      // 5. Mapping activities per depo
-      const activityMap = {}
-      activities.forEach(a => {
-        if (!activityMap[a.kode_plant]) activityMap[a.kode_plant] = {}
-        if (!activityMap[a.kode_plant][a.activity_id]) {
-          activityMap[a.kode_plant][a.activity_id] = {
+      // 4️⃣ Ambil jumlah dokumen per depo
+      const dokumenCountRows = await sequelize.query(
+        `SELECT d.kode_plant, COUNT(doc.id) AS jumlah_dokumen
+         FROM documents doc
+         JOIN depos d ON doc.status_depo = d.status_depo
+         WHERE doc.jenis_dokumen LIKE :tipeValue
+         GROUP BY d.kode_plant`,
+        { replacements: { tipeValue: `%${tipeValue}%` }, type: sequelize.QueryTypes.SELECT }
+      )
+      const dokumenCountMap = {}
+      dokumenCountRows.forEach(dc => { dokumenCountMap[dc.kode_plant] = dc.jumlah_dokumen })
+
+      // 5️⃣ Mapping depo -> activities -> docs
+      const depoMap = {}
+      depos.forEach(d => {
+        depoMap[d.kode_plant] = { ...d, dokumen_count: dokumenCountMap[d.kode_plant] || 0, activities: {} }
+      })
+      activityRows.forEach(a => {
+        if (!depoMap[a.kode_plant]) return
+        if (!depoMap[a.kode_plant].activities[a.activity_id]) {
+          depoMap[a.kode_plant].activities[a.activity_id] = {
             createdAt: a.activity_date,
-            progress: a.activity_progress,
+            progress: a.progress,
             docs: []
           }
         }
         if (a.dokumen) {
-          activityMap[a.kode_plant][a.activity_id].docs.push({
+          depoMap[a.kode_plant].activities[a.activity_id].docs.push({
             dokumen: a.dokumen,
             status_dokumen: a.status_dokumen,
             createdAt: a.dokumen_created
@@ -2299,50 +2299,46 @@ module.exports = {
         }
       })
 
-      // 6. Build header & body
-      const header = buildHeader(Object.values(depoMap).flatMap(d => d.dokumenNames))
+      // 6️⃣ Build header & body
+      const header = buildHeader(dokumenNames)
       const body = []
       let no = 1
-      depos.forEach(depo => {
-        const dokumenNames = depoMap[depo.kode_plant]?.dokumenNames || []
-        const activitiesPerDepo = Object.values(activityMap[depo.kode_plant] || {})
-        if (activitiesPerDepo.length) {
-          activitiesPerDepo.forEach((act, idx) => {
+      Object.values(depoMap).forEach(depo => {
+        const activities = Object.values(depo.activities)
+        if (activities.length) {
+          activities.forEach((act, idx) => {
             let progressCount = 0
-            const rowData = []
-            rowData.push(`${no}.${idx + 1}`)
-            rowData.push(moment(act.createdAt).format('LL'))
-            rowData.push(depo.nama_depo)
-            rowData.push(depo.kode_plant)
-            rowData.push(depo.profit_center)
-            rowData.push(depo.kode_sap_1)
-            rowData.push(depo.status_depo)
+            const row = []
+            row.push(`${no}.${idx + 1}`)
+            row.push(moment(act.createdAt).format('LL'))
+            row.push(depo.nama_depo)
+            row.push(depo.kode_plant)
+            row.push(depo.profit_center)
+            row.push(depo.kode_sap_1)
+            row.push(depo.status_depo)
 
             dokumenNames.forEach(nama => {
               const doc = act.docs.find(d => d.dokumen === nama)
               if (doc && (doc.status_dokumen === 3 || doc.status_dokumen === 5)) progressCount++
-              rowData.push(doc ? (doc.status_dokumen === 3 ? moment(doc.createdAt).format('LLL') : `Telat (${moment(doc.createdAt).format('LLL')})`) : '-')
+              row.push(doc ? (doc.status_dokumen === 3 ? moment(doc.createdAt).format('LLL') : `Telat (${moment(doc.createdAt).format('LLL')})`) : '-')
             })
 
-            const percent = depoMap[depo.kode_plant]?.dokumen_count > 0
-              ? `${Math.round((progressCount / depoMap[depo.kode_plant].dokumen_count) * 100)}%`
-              : '0%'
-            rowData.push(depoMap[depo.kode_plant]?.dokumen_count || 0, progressCount, percent)
-            body.push(rowData)
+            const percent = depo.dokumen_count > 0 ? `${Math.round((progressCount / depo.dokumen_count) * 100)}%` : '0%'
+            row.push(depo.dokumen_count, progressCount, percent)
+            body.push(row)
           })
         } else {
-          // Depo tanpa activities
-          const rowData = []
-          rowData.push(no)
-          rowData.push('-')
-          rowData.push(depo.nama_depo)
-          rowData.push(depo.kode_plant)
-          rowData.push(depo.profit_center)
-          rowData.push(depo.kode_sap_1)
-          rowData.push(depo.status_depo)
-          dokumenNames.forEach(() => rowData.push('-'))
-          rowData.push(depoMap[depo.kode_plant]?.dokumen_count || 0, 0, '0%')
-          body.push(rowData)
+          const row = []
+          row.push(no)
+          row.push('-')
+          row.push(depo.nama_depo)
+          row.push(depo.kode_plant)
+          row.push(depo.profit_center)
+          row.push(depo.kode_sap_1)
+          row.push(depo.status_depo)
+          dokumenNames.forEach(() => row.push('-'))
+          row.push(depo.dokumen_count, 0, '0%')
+          body.push(row)
         }
         no++
       })
