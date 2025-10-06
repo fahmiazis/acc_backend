@@ -3273,8 +3273,8 @@ module.exports = {
     // }
   },
   reportDokumen: async (req, res) => {
+    req.setTimeout(1000 * 60 * 30)
     try {
-      req.setTimeout(1000 * 60 * 30)
       const { level, kode: depoKode } = req.user
       const { from, to, tipe } = req.query
 
