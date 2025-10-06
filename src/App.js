@@ -99,6 +99,8 @@ app.get('/', (req, res) => {
   })
 })
 
+server.setTimeout(30 * 60 * 1000)
+
 server.listen(APP_PORT, () => {
   console.log(`App is running on port ${APP_URL}`)
 })
