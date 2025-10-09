@@ -345,7 +345,7 @@ module.exports = {
                 const noun = []
                 const process = rows[i]
                 for (let j = 0; j < process.length + 1; j++) {
-                  if (j === 5) {
+                  if (j === 4) {
                     let str = 'pma12345'
                     str = await bcrypt.hash(str, await bcrypt.genSalt())
                     noun.push(str)
