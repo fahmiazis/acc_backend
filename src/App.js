@@ -38,6 +38,8 @@ const dokumenRoute = require('./routes/dokumen')
 const depoRoute = require('./routes/depo')
 const picRoute = require('./routes/pic')
 const transRoute = require('./routes/transaction')
+const movementRoute = require('./routes/movement')
+const inventoryRoute = require('./routes/inventory')
 const showRoute = require('./routes/show')
 
 // upload tax sales
@@ -47,6 +49,7 @@ const authMiddleware = require('./middleware/auth')
 
 app.use('/uploads', express.static('assets/documents'))
 app.use('/masters', express.static('assets/masters'))
+app.use('/exports', express.static('assets/exports'))
 app.use('/merge', express.static('assets/merge'))
 app.use('/download', express.static('assets/exports'))
 
@@ -60,6 +63,8 @@ app.use('/email', authMiddleware, emailRoute)
 app.use('/dokumen', authMiddleware, dokumenRoute)
 app.use('/depo', authMiddleware, depoRoute)
 app.use('/pic', authMiddleware, picRoute)
+app.use('/movement', authMiddleware, movementRoute)
+app.use('/inventory', authMiddleware, inventoryRoute)
 app.use('/show', showRoute)
 
 // upload sales tax

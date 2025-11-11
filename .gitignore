@@ -2,5 +2,7 @@ node_modules
 assets
 src/config
 .env
+.env.local
 db28072025.sql
 dbnow.sql
+logs

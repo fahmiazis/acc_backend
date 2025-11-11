@@ -33,4 +33,4 @@ const fileFilter = (req, file, cb) => {
   // return cb(new Error('Invalid file type. Only excel files are allowed.'), false)
 }
 
-module.exports = multer({ storage, fileFilter, limits: { fileSize: 500000000 } }).array('master', 300)
+module.exports = multer({ storage, fileFilter, limits: { fileSize: 100000000 } }).array('master', 300)
