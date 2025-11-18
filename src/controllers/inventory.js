@@ -660,6 +660,13 @@ module.exports = {
 
               console.log(`[${plant}] Starting Python worker...`)
               
+              // Debug PATH
+              console.log('=== DEBUG PATH ===');
+              console.log('PATH:', process.env.PATH);
+              console.log('Which python:', require('child_process').execSync('which python || echo "not found"').toString().trim());
+              console.log('==================');
+
+              
               // Spawn python worker
               const py = spawn(pythonPathProd, [
                 path.join(__dirname, '../workers/generate_inventory_report.py')
