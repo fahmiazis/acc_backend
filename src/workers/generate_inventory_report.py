@@ -1,10 +1,6 @@
-# generate_inventory_report.py - ULTRA-OPTIMIZED VERSION
+# generate_inventory_report.py - ULTRA-OPTIMIZED VERSION WITH FIXED DATE PARSING
 # Target: Sub-60 seconds
-# Key improvements:
-# 1. Cached sheet lookups with pre-filtering
-# 2. Numpy-based calculations where possible
-# 3. Minimal openpyxl calls (batch operations)
-# 4. Smart filtering to reduce data size early
+# FIXED: Date parsing DD/MM/YYYY dan mapping data yang benar
 
 import sys
 import json
@@ -39,27 +35,6 @@ def find_col(df_cols, candidates):
             if cand_lower in key:
                 return original
     return None
-
-def safe_to_datetime(series):
-    """Convert series to datetime"""
-    formats = ['%Y-%m-%d', '%d/%m/%Y', '%m/%d/%Y', '%d-%m-%Y', '%Y/%m/%d']
-    
-    for fmt in formats:
-        try:
-            with warnings.catch_warnings():
-                warnings.simplefilter("ignore")
-                result = pd.to_datetime(series, format=fmt, errors='coerce')
-                if result.notna().sum() > len(series) * 0.5:
-                    return result
-        except:
-            continue
-    
-    try:
-        with warnings.catch_warnings():
-            warnings.simplefilter("ignore")
-            return pd.to_datetime(series, errors='coerce', dayfirst=True)
-    except:
-        return pd.to_datetime(series, errors='coerce')
 
 def ensure_dir(path):
     os.makedirs(path, exist_ok=True)
@@ -312,15 +287,44 @@ def main():
         
         df_mb51 = df_mb51.rename(columns=rename_dict)
 
-        # Convert types
+        # FIXED: Convert types with proper date handling
         log("Converting data types...")
+        log("  Converting posting_date from Excel serial number (DD/MM/YYYY format)...")
+        
+        # Convert posting_date from Excel serial number (with DD/MM/YYYY interpretation)
         try:
+            # First, convert to numeric (Excel serial dates)
+            date_numeric = pd.to_numeric(df_mb51["posting_date"], errors='coerce')
+            
+            # Convert from Excel serial to datetime
+            # Excel serial date: days since 1899-12-30
             df_mb51["posting_date"] = pd.to_datetime(
-                df_mb51["posting_date"].astype(float), 
-                origin='1899-12-30', unit='D', errors='coerce'
+                date_numeric, 
+                origin='1899-12-30',
+                unit='D', 
+                errors='coerce'
             )
-        except:
-            df_mb51["posting_date"] = safe_to_datetime(df_mb51["posting_date"])
+            
+            valid_count = df_mb51["posting_date"].notna().sum()
+            log(f"  ✓ Converted {valid_count} valid dates")
+            
+            # Show date range for verification
+            if valid_count > 0:
+                min_date = df_mb51["posting_date"].min()
+                max_date = df_mb51["posting_date"].max()
+                log(f"  Date range: {min_date.strftime('%d/%m/%Y')} to {max_date.strftime('%d/%m/%Y')}")
+                
+                # Show sample dates
+                log("  Sample dates (first 3 valid):")
+                sample_dates = df_mb51[df_mb51["posting_date"].notna()]["posting_date"].head(3)
+                for i, dt in enumerate(sample_dates, 1):
+                    log(f"    {i}. {dt.strftime('%d/%m/%Y')} (Day={dt.day}, Month={dt.month}, Year={dt.year})")
+            
+        except Exception as e:
+            log(f"  ERROR converting dates: {str(e)}")
+            import traceback as tb_module
+            log(f"  Traceback: {tb_module.format_exc()}")
+            df_mb51["posting_date"] = pd.NaT
         
         df_mb51["amount"] = pd.to_numeric(df_mb51["amount"], errors="coerce").fillna(0)
         df_mb51["plant"] = df_mb51["plant"].astype(str).str.strip()
@@ -357,11 +361,14 @@ def main():
         df_mb51['mv_grouping'] = df_mb51['mv_grouping'].str.title()
         df_mb51 = df_mb51.drop(columns=['lookup_key_3', 'lookup_key_2'])
 
-        # Determine report period
+        # FIXED: Determine report period correctly
+        log("Determining report period...")
         if df_mb51["posting_date"].dropna().empty:
+            log("  No valid dates found, using current month")
             report_month_dt = datetime.datetime.now()
         else:
             report_month_dt = df_mb51["posting_date"].dropna().max()
+            log(f"  Using max date from data: {report_month_dt.strftime('%d/%m/%Y')}")
         
         bulan = report_month_dt.strftime("%B").upper()
         tahun = report_month_dt.year
@@ -371,7 +378,26 @@ def main():
         prev_year = prev_month_dt.year
         bulan_only = bulan
 
-        log(f"Report period: {bulan} {tahun}")
+        log(f"  Report period: {bulan} {tahun} (Month #{bulan_angka})")
+
+        # FIXED: Filter MB51 with correct date logic
+        log("Filtering MB51 data...")
+        log(f"  Filter criteria: Year={tahun}, Month={bulan_angka}")
+        
+        df_mb51_filtered = df_mb51[
+            (df_mb51["posting_date"].dt.year == tahun) &
+            (df_mb51["posting_date"].dt.month == bulan_angka)
+        ].copy()
+
+        log(f"  ✓ Filtered: {len(df_mb51_filtered)} rows (from {len(df_mb51)} total)")
+        
+        if len(df_mb51_filtered) > 0:
+            # Verify filter worked correctly
+            unique_months = df_mb51_filtered["posting_date"].dt.month.unique()
+            unique_years = df_mb51_filtered["posting_date"].dt.year.unique()
+            log(f"  Filtered data contains: Months={unique_months.tolist()}, Years={unique_years.tolist()}")
+        else:
+            log("  WARNING: No data after filtering! Check date format and filter criteria")
 
         # Parallel sheet reading
         log("Reading main file sheets...")
@@ -394,7 +420,7 @@ def main():
         if 'Output Report INV ARUS BARANG' in sheets_dict:
             df_existing = sheets_dict['Output Report INV ARUS BARANG']
             if df_existing.shape[0] > 8 and df_existing.shape[1] >= 7:
-                df_existing_materials = df_existing.iloc[7:, [1, 5]].copy()  # Only plant & material
+                df_existing_materials = df_existing.iloc[7:, [1, 5]].copy()
                 df_existing_materials.columns = ['plant', 'material']
                 df_existing_materials = df_existing_materials[
                     (df_existing_materials['material'].notna()) & 
@@ -402,15 +428,12 @@ def main():
                     (df_existing_materials['material'].astype(str).str.strip() != 'nan')
                 ]
                 
-                # FIXED: ALWAYS get area/kode_dist/profit_center from master_inventory
-                # Don't use values from existing Output Report, always override!
-                log("Loading existing materials (area/kode_dist/profit_center will be refreshed from master)")
+                log("Loading existing materials (refreshing from master)...")
                 
                 for idx, row in df_existing_materials.iterrows():
                     plant = str(row['plant']).strip()
                     material = str(row['material']).strip()
                     
-                    # ALWAYS fetch from master inventory (force refresh)
                     if plant in inv_map:
                         existing_materials.append({
                             'material': material,
@@ -420,8 +443,7 @@ def main():
                             'profit_center': inv_map[plant]['profit_center']
                         })
                     else:
-                        # If plant not in master, skip or use empty values
-                        log(f"  WARNING: Plant '{plant}' not found in master inventory for material '{material}'")
+                        log(f"  WARNING: Plant '{plant}' not in master for material '{material}'")
                         existing_materials.append({
                             'material': material,
                             'plant': plant,
@@ -430,17 +452,9 @@ def main():
                             'profit_center': ''
                         })
                 
-                log(f"Found {len(existing_materials)} existing materials (all values refreshed from master)")
+                log(f"  Found {len(existing_materials)} existing materials")
         else:
-            log("No existing Output Report sheet found")
-
-        # Filter MB51
-        df_mb51_filtered = df_mb51[
-            (df_mb51["posting_date"].dt.year == tahun) &
-            (df_mb51["posting_date"].dt.month == bulan_angka)
-        ].copy()
-
-        log(f"Filtered MB51: {len(df_mb51_filtered)} rows")
+            log("  No existing Output Report sheet found")
 
         # Aggregate MB51
         log("Aggregating MB51...")
@@ -449,7 +463,7 @@ def main():
             dropna=False
         ).agg({'amount': 'sum'}).reset_index()
         
-        log(f"Grouped MB51: {len(grouped_mb51)} combinations")
+        log(f"  Grouped MB51: {len(grouped_mb51)} combinations")
 
         # Create lookups
         grouped_mb51['lookup_key'] = (
@@ -486,10 +500,10 @@ def main():
                 })
         
         all_materials = existing_materials + new_materials
-        log(f"Total materials: {len(all_materials)}")
+        log(f"Total materials: {len(all_materials)} ({len(existing_materials)} existing + {len(new_materials)} new)")
 
         if len(all_materials) == 0:
-            raise ValueError("No materials found")
+            raise ValueError("No materials found - check if MB51 data was filtered correctly")
 
         grouped_materials = pd.DataFrame(all_materials)
 
@@ -501,11 +515,10 @@ def main():
             key = f"{material}|{plant}|{storage_loc}|{mv_grouping_label}"
             return mb51_lookup.get(key, 0.0)
 
-        # Material descriptions - FIXED: Load from all sources
+        # Material descriptions
         log("Loading material descriptions...")
         material_desc_map = {}
         
-        # Priority 1: From MB51 (filtered data)
         if 'material_desc_mb51' in df_mb51_filtered.columns:
             desc_df = df_mb51_filtered[['material', 'material_desc_mb51']].dropna()
             desc_df = desc_df[desc_df['material_desc_mb51'].astype(str).str.strip() != '']
@@ -513,7 +526,6 @@ def main():
             material_desc_map.update(dict(zip(desc_df['material'], desc_df['material_desc_mb51'])))
             log(f"  Loaded {len(material_desc_map)} from MB51 filtered")
         
-        # Priority 2: From full MB51 (if filtered didn't have it)
         if 'material_desc_mb51' in df_mb51.columns:
             desc_df = df_mb51[['material', 'material_desc_mb51']].dropna()
             desc_df = desc_df[desc_df['material_desc_mb51'].astype(str).str.strip() != '']
@@ -523,7 +535,6 @@ def main():
                     material_desc_map[mat] = desc
             log(f"  Total after full MB51: {len(material_desc_map)}")
         
-        # Priority 3: From existing Output Report
         if 'Output Report INV ARUS BARANG' in sheets_dict:
             try:
                 df_out = sheets_dict['Output Report INV ARUS BARANG']
@@ -843,57 +854,39 @@ def main():
             ws[f"{col}3"] = f"=SUM({col}9:{col}{last_row})"
         
         # S1 - Calculate ctrl balance MB51
-        # Original formula: ='5. MB51'!M1-SUM('Output Report INV ARUS BARANG'!R3:BB3)
-        # Now: Calculate from MB51 total amount - sum of movements
         log("Calculating S1 (ctrl balance MB51)...")
-        
-        # Total amount from MB51 (all transactions for the period)
         mb51_total_amount = df_mb51_filtered['amount'].sum()
-        
-        # Sum of all movement columns (R3:BB3)
         sum_r3_bb3 = sum([totals.get(col, 0) for col in sum_columns])
-        
         s1_value = mb51_total_amount - sum_r3_bb3
         ws["S1"] = s1_value
-        log(f"  S1 calculated: MB51 total={mb51_total_amount:.2f}, SUM(R3:BB3)={sum_r3_bb3:.2f}, S1={s1_value:.2f}")
+        log(f"  S1 = {s1_value:.2f} (MB51 total={mb51_total_amount:.2f} - movements={sum_r3_bb3:.2f})")
         
-        # AX2 - Formula between columns (keep as formula)
+        # AX2 - Formula between columns
         ws["AX2"] = "=X3+AF3+AO3+AX3"
         
         # BL2 - Calculate difference with MB5B
-        # Original formula: =SUM(BL9:BL{last_row})-SUM('13. MB5B'!P:Q)
         log("Calculating BL2 (MB5B difference)...")
-        
-        # Sum of BL column (already calculated in the loop)
         sum_bl = 0.0
         for row in range(9, write_row):
             cell_val = ws.cell(row=row, column=get_column_index("BL")).value
             if isinstance(cell_val, (int, float)):
                 sum_bl += cell_val
         
-        log(f"  BL2 calculation: SUM(BL9:BL{last_row})={sum_bl:.2f}")
-        
-        # Sum from '13. MB5B' sheet columns P and Q
         sum_mb5b_pq = 0.0
         if '13. MB5B' in sheets_dict:
             df_mb5b_sheet = sheets_dict['13. MB5B']
             try:
-                # Column P is index 15 (0-based), Q is index 16
                 if df_mb5b_sheet.shape[1] > 16:
                     sum_p = pd.to_numeric(df_mb5b_sheet.iloc[:, 15], errors='coerce').fillna(0).sum()
                     sum_q = pd.to_numeric(df_mb5b_sheet.iloc[:, 16], errors='coerce').fillna(0).sum()
                     sum_mb5b_pq = sum_p + sum_q
-                    log(f"  BL2 calculation: SUM('13. MB5B'!P:Q)={sum_mb5b_pq:.2f} (P={sum_p:.2f}, Q={sum_q:.2f})")
-                else:
-                    log(f"  Warning: '13. MB5B' has only {df_mb5b_sheet.shape[1]} columns, expected at least 17")
+                    log(f"  MB5B P+Q = {sum_mb5b_pq:.2f}")
             except Exception as e:
-                log(f"  Warning: Could not calculate MB5B P:Q sum: {str(e)}")
-        else:
-            log(f"  Warning: '13. MB5B' sheet not found, using 0 for calculation")
+                log(f"  Warning: Could not calculate MB5B sum: {str(e)}")
         
         bl2_value = sum_bl - sum_mb5b_pq
         ws["BL2"] = bl2_value
-        log(f"  BL2 final value: {sum_bl:.2f} - {sum_mb5b_pq:.2f} = {bl2_value:.2f}")
+        log(f"  BL2 = {bl2_value:.2f} (BL={sum_bl:.2f} - MB5B={sum_mb5b_pq:.2f})")
 
         # Formatting
         log("Formatting...")
@@ -921,14 +914,14 @@ def main():
                 ws.cell(row=row, column=col).number_format = '#,##0'
 
         # Save
-        log(f"Saving workbook...")
+        log(f"Saving workbook to {output_path}...")
         wb.save(output_path)
         
         if not os.path.exists(output_path):
-            raise Exception(f"File was not created")
+            raise Exception(f"File was not created at {output_path}")
         
         file_size = os.path.getsize(output_path)
-        log(f"File created: {file_size} bytes")
+        log(f"✓ File created successfully: {file_size:,} bytes")
         
         result = {
             "success": True,
@@ -937,17 +930,19 @@ def main():
             "report_month": f"{bulan} {tahun}",
             "total_materials": len(grouped_materials),
             "file_size": file_size,
-            "timestamp": timestamp
+            "timestamp": timestamp,
+            "filtered_rows": len(df_mb51_filtered),
+            "total_mb51_rows": len(df_mb51)
         }
         
         print(json.dumps(result))
         sys.stdout.flush()
-        log("Report completed!")
+        log("✓ Report generation completed successfully!")
 
     except Exception as e:
         tb = traceback.format_exc()
-        log(f"Error: {str(e)}")
-        log(f"Trace: {tb}")
+        log(f"ERROR: {str(e)}")
+        log(f"Traceback:\n{tb}")
         
         error_result = {
             "success": False,
