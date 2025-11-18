@@ -314,13 +314,52 @@ def main():
 
         # Convert types
         log("Converting data types...")
+        
+        # DEBUG: Show raw posting_date values BEFORE conversion
+        log("  === RAW posting_date values (first 5 rows) ===")
+        sys.stderr.flush()
+        for idx in range(min(5, len(df_mb51))):
+            raw_val = df_mb51["posting_date"].iloc[idx]
+            log(f"    Row {idx+1}: '{raw_val}' (type: {type(raw_val).__name__})")
+            sys.stderr.flush()
+        
+        # Convert posting_date from Excel serial
         try:
             df_mb51["posting_date"] = pd.to_datetime(
-                df_mb51["posting_date"].astype(float), 
-                origin='1899-12-30', unit='D', errors='coerce'
+                pd.to_numeric(df_mb51["posting_date"], errors='coerce'), 
+                origin='1899-12-30',
+                unit='D', 
+                errors='coerce'
             )
-        except:
-            df_mb51["posting_date"] = safe_to_datetime(df_mb51["posting_date"])
+            
+            valid_count = df_mb51["posting_date"].notna().sum()
+            log(f"  Posting date converted: {valid_count} valid dates")
+            sys.stderr.flush()
+            
+            # Show samples AFTER conversion
+            if valid_count > 0:
+                log(f"  === CONVERTED posting_date (first 5 rows) ===")
+                sys.stderr.flush()
+                samples = df_mb51["posting_date"].head(5)
+                for i, dt in enumerate(samples, 1):
+                    if pd.notna(dt):
+                        log(f"    Row {i}: {dt.strftime('%d/%m/%Y')} = Day {dt.day}, Month {dt.month} ({dt.strftime('%B')}), Year {dt.year}")
+                        sys.stderr.flush()
+                    else:
+                        log(f"    Row {i}: NaT (invalid date)")
+                        sys.stderr.flush()
+                
+                months = df_mb51["posting_date"].dropna().dt.month.unique()
+                log(f"  === Unique months found: {sorted(months.tolist())} ===")
+                sys.stderr.flush()
+                
+        except Exception as e:
+            log(f"  Date conversion error: {str(e)}")
+            sys.stderr.flush()
+            import traceback as tb_module
+            log(f"  Traceback: {tb_module.format_exc()}")
+            sys.stderr.flush()
+            df_mb51["posting_date"] = pd.NaT
         
         df_mb51["amount"] = pd.to_numeric(df_mb51["amount"], errors="coerce").fillna(0)
         df_mb51["plant"] = df_mb51["plant"].astype(str).str.strip()
@@ -394,27 +433,45 @@ def main():
         if 'Output Report INV ARUS BARANG' in sheets_dict:
             df_existing = sheets_dict['Output Report INV ARUS BARANG']
             if df_existing.shape[0] > 8 and df_existing.shape[1] >= 7:
-                df_existing_materials = df_existing.iloc[7:, [0, 1, 2, 3, 5]].copy()
-                df_existing_materials.columns = ['area', 'plant', 'kode_dist', 'profit_center', 'material']
+                df_existing_materials = df_existing.iloc[7:, [1, 5]].copy()  # Only plant & material
+                df_existing_materials.columns = ['plant', 'material']
                 df_existing_materials = df_existing_materials[
                     (df_existing_materials['material'].notna()) & 
                     (df_existing_materials['material'].astype(str).str.strip() != '') &
                     (df_existing_materials['material'].astype(str).str.strip() != 'nan')
                 ]
                 
-                # Fill missing values from master
+                # FIXED: ALWAYS get area/kode_dist/profit_center from master_inventory
+                # Don't use values from existing Output Report, always override!
+                log("Loading existing materials (area/kode_dist/profit_center will be refreshed from master)")
+                
                 for idx, row in df_existing_materials.iterrows():
                     plant = str(row['plant']).strip()
+                    material = str(row['material']).strip()
+                    
+                    # ALWAYS fetch from master inventory (force refresh)
                     if plant in inv_map:
-                        if pd.isna(row['area']) or str(row['area']).strip() == '':
-                            df_existing_materials.at[idx, 'area'] = inv_map[plant]['area']
-                        if pd.isna(row['kode_dist']) or str(row['kode_dist']).strip() == '':
-                            df_existing_materials.at[idx, 'kode_dist'] = inv_map[plant]['kode_dist']
-                        if pd.isna(row['profit_center']) or str(row['profit_center']).strip() == '':
-                            df_existing_materials.at[idx, 'profit_center'] = inv_map[plant]['profit_center']
+                        existing_materials.append({
+                            'material': material,
+                            'plant': plant,
+                            'area': inv_map[plant]['area'],
+                            'kode_dist': inv_map[plant]['kode_dist'],
+                            'profit_center': inv_map[plant]['profit_center']
+                        })
+                    else:
+                        # If plant not in master, skip or use empty values
+                        log(f"  WARNING: Plant '{plant}' not found in master inventory for material '{material}'")
+                        existing_materials.append({
+                            'material': material,
+                            'plant': plant,
+                            'area': '',
+                            'kode_dist': '',
+                            'profit_center': ''
+                        })
                 
-                existing_materials = df_existing_materials.to_dict('records')
-                log(f"Found {len(existing_materials)} existing materials")
+                log(f"Found {len(existing_materials)} existing materials (all values refreshed from master)")
+        else:
+            log("No existing Output Report sheet found")
 
         # Filter MB51
         df_mb51_filtered = df_mb51[

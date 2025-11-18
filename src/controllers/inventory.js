@@ -13,6 +13,8 @@ const vs = require('fs-extra')
 const { spawn } = require('child_process')
 const path = require('path')
 const { APP_BE } = process.env
+const pythonPathLocal = 'python'
+const pythonPathProd = '/usr/bin/python'
 const borderStyles = {
   top: { style: 'thin' },
   left: { style: 'thin' },
@@ -659,7 +661,7 @@ module.exports = {
               console.log(`[${plant}] Starting Python worker...`)
               
               // Spawn python worker
-              const py = spawn("python", [
+              const py = spawn(pythonPathProd, [
                 path.join(__dirname, '../workers/generate_inventory_report.py')
               ])
 
@@ -829,6 +831,7 @@ module.exports = {
   },
   mergeInventoryReports: async (req, res) => {
     try {
+
       const username = req.user.name
       const { listIds, date } = req.body // Array of report IDs to merge
       const startDate = moment(date).startOf('month').toDate();
@@ -887,7 +890,7 @@ module.exports = {
       const { spawn } = require('child_process')
       const path = require('path')
       
-      const py = spawn("python", [
+      const py = spawn(pythonPathProd, [
         path.join(__dirname, '../workers/merge_inventory_reports.py')
       ])
       
