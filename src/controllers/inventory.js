@@ -14,7 +14,7 @@ const { spawn } = require('child_process')
 const path = require('path')
 const { APP_BE } = process.env
 const pythonPathLocal = 'python'
-const pythonPathProd = '/usr/bin/python'
+const pythonPathProd = '/usr/bin/python3'
 const borderStyles = {
   top: { style: 'thin' },
   left: { style: 'thin' },
@@ -659,7 +659,7 @@ module.exports = {
               })
 
               console.log(`[${plant}] Starting Python worker...`)
-              
+
               // Debug PATH
               console.log('=== DEBUG PATH ===');
               console.log('PATH:', process.env.PATH);
