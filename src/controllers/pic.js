@@ -9,7 +9,7 @@ const uploadMaster = require('../helpers/uploadMaster')
 const fs = require('fs')
 const excel = require('exceljs')
 const vs = require('fs-extra')
-const { APP_URL } = process.env
+const { APP_BE } = process.env
 
 module.exports = {
   addPic: async (req, res) => {
@@ -28,7 +28,14 @@ module.exports = {
         return response(res, 'Error', { error: error.message }, 401, false)
       } else {
         if (level === 1) {
-          const result = await pic.findAll({ where: { kode_depo: results.kode_depo } })
+          const result = await pic.findAll({ 
+            where: {
+              [Op.and]: [
+                { kode_depo: results.kode_depo },
+                { pic: results.pic }  
+              ]
+            } 
+          })
           if (result.length > 0) {
             return response(res, 'kode depo already use', {}, 404, false)
           } else {
@@ -67,7 +74,10 @@ module.exports = {
           if (results.kode_depo) {
             const result = await pic.findAll({
               where: {
-                kode_depo: results.kode_depo,
+                [Op.and]: [
+                  { kode_depo: results.kode_depo },
+                  { pic: results.pic }  
+                ],
                 [Op.not]: { id: id }
               }
             })
@@ -353,7 +363,7 @@ module.exports = {
             }
             console.log('success')
           })
-          return response(res, 'success', { link: `${APP_URL}/download/${name}` })
+          return response(res, 'success', { link: `${APP_BE}/download/${name}` })
         } else {
           return response(res, 'failed create file', {}, 404, false)
         }
