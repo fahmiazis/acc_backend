@@ -1,0 +1,384 @@
+Header =========
+
+A1 - E7 kosong 
+
+F1 = Nama Area (statis) 
+F2 = Plant (statis) 
+F3 = Kode Dist (statis) 
+F4 = Profit Center (statis) 
+F5 = Periode (statis) 
+F6 kosong 
+F7 = Material (statis) 
+
+G1 = ambil 1 data nama area dari mapping master inventory dari groupingan MB51 
+G2 = ambil 1 data kode plant dari mapping master inventory dari groupingan MB51 
+G3 = ambil 1 data kode dist dari mapping master inventory dari groupingan MB51 
+G4 = ambil 1 data profit center dari mapping master inventory dari groupingan MB51 
+G5 = ambil 1 data posting date dari groupingan MB51 dan formatnya hanya bulan 
+G6 kosong 
+G7 = Material Description (statis) 
+
+A8 = Nama Area (statis) 
+B8 = Plant (statis) 
+C8 = Kode Dist (statis) 
+D8 = Profit Center (statis) 
+E8 = Periode (statis) 
+F8 = source data (statis) 
+G8 kosong 
+
+H1 - P3 kosong 
+H4 - M4 merge = SALDO AWAL ${bulan berjalan} ${tahun berjalan} 
+H5 - J5 merge = SALDO AWAL ${-1 bulan berjalan} ${tahun berjalan} 
+
+K5 - M5 merge = SAP - MB5B (statis) 
+
+N5 = DIFF (statis) 
+
+H6 = GS (statis) 
+I6 = BS (statis) 
+J6 = Grand Total (statis) 
+K6 = GS (statis) 
+L6 = BS (statis) 
+M6 = Grand Total (statis) 
+N6 = GS (statis) 
+O6 = BS (statis) 
+P6 = Grand Total (statis) 
+
+H7 - P7 = S.Aw (statis) 
+H8 - P8 kosong
+
+N4 - BD4 kosong
+
+Q kosong width 2 
+
+R2 - AW2 kosong 
+
+R1 = ctrl balance MB51 (statis) 
+R3 = =SUM(R9:R15000) = rumus excel 
+
+R4-BD4 kosong 
+
+R5 - BD5 merge = SAP - MB51 (statis) 
+R6 - Z6 merge = GS00 (statis)
+R7 = Terima Barang (statis)
+R8 = DTB (statis) 
+
+S1 = ='5. MB51'!M1-SUM('Output Report INV ARUS BARANG'!R3:BB3) = rumus excel 
+S3 = =SUM(S9:S15000) = rumus excel 
+S7 = Retur Beli (statis) 
+S8 = BPPR (statis)
+
+T1 - BW1 kosong 
+T3 = =SUM(T9:T15000) = rumus excel 
+T7 = Penjualan (statis)
+T8 = LBP (statis)
+
+U3 = =SUM(U9:U15000) = rumus excel
+U7 = Retur Jual (statis)
+U8 = LBP (statis)
+
+V3 = =SUM(V9:V15000) = rumus excel
+V7 = Intra Gudang Masuk (statis)
+V8 = DTB (statis)
+
+W3 = =SUM(W9:W15000) = rumus excel
+W7 = Intra Gudang (statis)
+W8 = BPPR (statis)
+
+X3 = =SUM(X9:X15000) = rumus excel
+X7 = Transfer Stock (statis)
+X8 = ALIH STATUS (statis)
+
+Y3 = =SUM(Y9:Y15000) = rumus excel
+Y7 = Pemusnahan (statis)
+Y8 = Pemusnahan (statis)
+
+Z3 = =SUM(Z9:Z15000) = rumus excel
+Z7 = Adjustment (statis)
+Z8 kosong
+
+kolom AA kosong width 2
+
+AB6 - AH6 merge = BS00 (statis)
+
+AB3 = =SUM(AB9:AB15000) = rumus excel
+AB7 = Terima Barang (statis)
+AB8 = DTB (statis)
+
+AC3 = =SUM(AC9:AC15000) = rumus excel
+AC7 = Retur Beli (statis)
+AC8 = BPPR (statis)
+
+AD3 = =SUM(AD9:AD15000) = rumus excel
+AD7 = Penjualan (statis)
+AD8 = LBP (statis)
+
+AE3 = =SUM(AE9:AE15000) = rumus excel
+AE7 = Retur Jual (statis)
+AE8 = LBP (statis)
+
+AF3 = =SUM(AF9:AF15000) = rumus excel
+AF7 = Transfer Stock (statis)
+AF8 = ALIH STATUS (statis)
+
+AG3 = =SUM(AG9:AG15000) = rumus excel
+AG7 = Pemusnahan (statis)
+AG8 = Pemusnahan (statis)
+
+AH3 = =SUM(AH9:AH15000) = rumus excel
+AH7 = Adjustment
+AH8 kosong
+
+kolom AI kosong width 2
+
+AJ6 - AQ6 merge = AI00 (statis)
+
+AJ3 = =SUM(AJ9:AJ15000) = rumus excel
+AJ7 = Terima Barang (statis) 
+AJ8 = DTB (statis)
+
+AK3 = =SUM(AK9:AK15000) = rumus excel
+AK7 = Retur Beli (statis) 
+AK8 = BPPR (statis)
+
+AL3 = =SUM(AL9:AL15000) = rumus excel
+AL7 = Penjualan (statis) 
+AL8 = LBP (statis)
+
+AM3 = =SUM(AM9:AM15000) = rumus excel
+AM7 = Retur Jual (statis) 
+AM8 = LBP (statis)
+
+AN3 = =SUM(AN9:AN15000) = rumus excel
+AN7 = Intra Gudang (statis) 
+AN8 = BPPR (statis)
+
+AO3 = =SUM(AO9:AO15000) = rumus excel
+AO7 = Transfer Stock (statis) 
+AO8 = ALIH STATUS (statis)
+
+AP3 = =SUM(AP9:AP15000) = rumus excel
+AP7 = Pemusnahan (statis) 
+AP8 = Pemusnahan (statis)
+
+AQ3 = =SUM(AO9:AO15000) = rumus excel
+AQ7 = Adjustment (statis) 
+AQ8 kosong
+
+kolom AR kosong width 2
+
+AS6 - AZ6 merge = TR00 (statis)
+
+AS3 = =SUM(AS9:AS15000) = rumus excel
+AS7 = Terima Barang (statis) 
+AS8 = DTB (statis)
+
+AT3 = =SUM(AT9:AT15000) = rumus excel
+AT7 = Retur Beli (statis) 
+AT8 = BPPR (statis)
+
+AU3 = =SUM(AU9:AU15000) = rumus excel
+AU7 = Penjualan (statis) 
+AU8 = LBP (statis)
+
+AV3 = =SUM(AV9:AV15000) = rumus excel
+AV7 = Retur Jual (statis) 
+AV8 = LBP (statis)
+
+AW3 = =SUM(AW9:AW15000) = rumus excel
+AW7 = Intra Gudang (statis) 
+AW8 = BPPR (statis)
+
+AX2 = =X3+AF3+AO3+AX3 = rumus excel
+AX3 = =SUM(AX9:AX15000) = rumus excel
+AX7 = Transfer Stock (statis) 
+AX8 = ALIH STATUS (statis)
+
+AY3 = =SUM(AY9:AY15000) = rumus excel
+AY7 = Pemusnahan (statis) 
+AY8 = Pemusnahan (statis)
+
+AZ3 = =SUM(AZ9:AZ15000) = rumus excel
+AZ7 = Adjustment (statis) 
+AZ8 kosong
+
+AY2 - BK kosong
+
+kolom BA kosong width 2
+
+BB6 - BD6 merge = 641 dan 642 tanpa sloc (statis)
+
+BB3 = =SUM(BB9:BB15000) = rumus excel
+BB7 = Intra Gudang (statis) 
+BB8 = 641 (statis)
+
+BC3 = =SUM(BC9:BC15000) = rumus excel
+BC7 = Intra Gudang (statis) 
+BC8 = 642 (statis)
+
+BD3 = =SUM(BD9:BD15000) = rumus excel
+BD7 = CEK (statis) 
+BD8 kosong
+
+BE3 = '-->stock in transit (statis)
+BE4 = 'jika selisih cek ke MB5T (statis)
+
+Kolom BF kosong width 4
+
+BG4 - BL4 merge = END STOCK ${-1 Bulan Berjalan} ${tahun}
+BG5 - BI5 merge = SALDO AKHIR (statis)
+BJ5 - BL5 merge = SAP - MB5B (statis)
+
+BM5 = DIFF (statis)
+
+BG6 = GS00 (statis)
+BH6 = BS00 (statis)
+BI6 = Grand Total (statis)
+
+BJ6 = GS (statis)
+BK6 = BS (statis)
+BL6 = Grand Total (statis)
+
+BM6 = GS (statis)
+BN6 = BS (statis)
+BO6 = Grand Total (statis)
+
+BG7 - BO7 = S.Ak (statis)
+
+BL2 = =SUM(BL7:BL237)-SUM('13. MB5B'!P:Q) = rumus excel
+
+BP7 = CEK SELISIH VS BULAN LALU (statis)
+
+BQ7 = kalo ada selisih atas inputan LOG1, LOG2 -> konfirmasi pa Reza utk diselesaikan (statis)
+
+BR5-BT5 merge = STOCK - EDS (statis)
+
+BU5 = DIFF (statis)
+
+BR6 = GS (statis)
+BS6 = BS (statis)
+BT6 = Grand Total (statis)
+
+BU6 = GS (statis)
+BV6 = BS (statis)
+BW6 = Grand Total (statis)
+
+BR7 - BW7 = S.Ak (statis)
+
+dari A1 - BW8 jika ada yg belum didefinisikan maka kosong
+
+Body ========
+
+A9 = ambil data nama area dari mapping data plant MB51 ke master inventory
+B9 = ambil data plant dari MB51
+C9 = ambil data kode dist dari mapping data plant MB51 ke master inventory
+D9 = ambil data profit center dari mapping data plant MB51 ke master inventory
+E9 = ambil data posting date dari MB51 dengan format bulan saja
+F9 = cek data "output report inv arus barang" dari F9 sampai F${akhir} jika belum ada tambahkan, jika sudah biarkan
+G9 = cek data "output report inv arus barang" dari G9 sampai G${akhir} jika belum ada tambahkan, jika sudah biarkan
+H9 = =SUMIFS('SALDO AWAL'!J:J;'SALDO AWAL'!A:A;'Output Report INV ARUS BARANG'!$G$2;'SALDO AWAL'!G:G;'Output Report INV ARUS BARANG'!F9;'SALDO AWAL'!F:F;'Output Report INV ARUS BARANG'!$H$6) = rumus excel
+I9 = =SUMIFS('SALDO AWAL'!J:J;'SALDO AWAL'!A:A;'Output Report INV ARUS BARANG'!$G$2;'SALDO AWAL'!G:G;'Output Report INV ARUS BARANG'!F9;'SALDO AWAL'!F:F;'Output Report INV ARUS BARANG'!$I$6) = rumus excel
+J9 = =H9+I9 = rumus excel
+K9 = =SUMIFS('SALDO AWAL MB5B'!D:D;'SALDO AWAL MB5B'!B:B;'Output Report INV ARUS BARANG'!$F9;'SALDO AWAL MB5B'!A:A;'Output Report INV ARUS BARANG'!$G$2) = rumus excel
+L9 = =SUMIFS('SALDO AWAL MB5B'!E:E;'SALDO AWAL MB5B'!B:B;'Output Report INV ARUS BARANG'!$F9;'SALDO AWAL MB5B'!A:A;'Output Report INV ARUS BARANG'!$G$2) = rumus excel
+M9 = =SUM(K9:L9) = rumus excel
+N9 = =H9-K9 = rumus excel
+O9 = =I9-L9 = rumus excel
+P9 = =N9+O9 = rumus excel
+R9 = =SUMIFS('5. MB51'!$M:$M;'5. MB51'!$A:$A;'Output Report INV ARUS BARANG'!$F9;'5. MB51'!$U:$U;'Output Report INV ARUS BARANG'!R$7;'5. MB51'!$C:$C;'Output Report INV ARUS BARANG'!$R$6;'5. MB51'!$B:$B;'Output Report INV ARUS BARANG'!$G$2)= rumus excel
+S9 = =SUMIFS('5. MB51'!$M:$M;'5. MB51'!$A:$A;'Output Report INV ARUS BARANG'!$F9;'5. MB51'!$U:$U;'Output Report INV ARUS BARANG'!S$7;'5. MB51'!$C:$C;'Output Report INV ARUS BARANG'!$R$6;'5. MB51'!$B:$B;'Output Report INV ARUS BARANG'!$G$2) = rumus excel
+T9 = =SUMIFS('5. MB51'!$M:$M;'5. MB51'!$A:$A;'Output Report INV ARUS BARANG'!$F9;'5. MB51'!$U:$U;'Output Report INV ARUS BARANG'!T$7;'5. MB51'!$C:$C;'Output Report INV ARUS BARANG'!$R$6) = rumus excel
+U9 = =SUMIFS('5. MB51'!$M:$M;'5. MB51'!$A:$A;'Output Report INV ARUS BARANG'!$F9;'5. MB51'!$U:$U;'Output Report INV ARUS BARANG'!U$7;'5. MB51'!$C:$C;'Output Report INV ARUS BARANG'!$R$6) = rumus excel
+V9 = =SUMIFS('5. MB51'!$M:$M;'5. MB51'!$A:$A;'Output Report INV ARUS BARANG'!$F9;'5. MB51'!$U:$U;'Output Report INV ARUS BARANG'!V$7;'5. MB51'!$C:$C;'Output Report INV ARUS BARANG'!$R$6) = rumus excel
+W9 = =SUMIFS('5. MB51'!$M:$M;'5. MB51'!$A:$A;'Output Report INV ARUS BARANG'!$F9;'5. MB51'!$U:$U;'Output Report INV ARUS BARANG'!W$7;'5. MB51'!$C:$C;'Output Report INV ARUS BARANG'!$R$6) = rumus excel
+X9 = =SUMIFS('5. MB51'!$M:$M;'5. MB51'!$A:$A;'Output Report INV ARUS BARANG'!$F9;'5. MB51'!$U:$U;'Output Report INV ARUS BARANG'!X$7;'5. MB51'!$C:$C;'Output Report INV ARUS BARANG'!$R$6) = rumus excel
+Y9 = =SUMIFS('5. MB51'!$M:$M;'5. MB51'!$A:$A;'Output Report INV ARUS BARANG'!$F9;'5. MB51'!$U:$U;'Output Report INV ARUS BARANG'!Y$7;'5. MB51'!$C:$C;'Output Report INV ARUS BARANG'!$R$6) = rumus excel
+Z9 = =SUMIFS('5. MB51'!$M:$M;'5. MB51'!$A:$A;'Output Report INV ARUS BARANG'!$F9;'5. MB51'!$U:$U;'Output Report INV ARUS BARANG'!Z$7;'5. MB51'!$C:$C;'Output Report INV ARUS BARANG'!$R$6) = rumus excel
+AB9 = =SUMIFS('5. MB51'!$M:$M;'5. MB51'!$A:$A;'Output Report INV ARUS BARANG'!$F9;'5. MB51'!$U:$U;'Output Report INV ARUS BARANG'!AB$7;'5. MB51'!$C:$C;'Output Report INV ARUS BARANG'!$AB$6) = rumus excel
+AC9 = =SUMIFS('5. MB51'!$M:$M;'5. MB51'!$A:$A;'Output Report INV ARUS BARANG'!$F9;'5. MB51'!$U:$U;'Output Report INV ARUS BARANG'!AC$7;'5. MB51'!$C:$C;'Output Report INV ARUS BARANG'!$AB$6) = rumus excel
+AD9 = =SUMIFS('5. MB51'!$M:$M;'5. MB51'!$A:$A;'Output Report INV ARUS BARANG'!$F9;'5. MB51'!$U:$U;'Output Report INV ARUS BARANG'!AD$7;'5. MB51'!$C:$C;'Output Report INV ARUS BARANG'!$AB$6) = rumus excel
+AE9 = =SUMIFS('5. MB51'!$M:$M;'5. MB51'!$A:$A;'Output Report INV ARUS BARANG'!$F9;'5. MB51'!$U:$U;'Output Report INV ARUS BARANG'!AE$7;'5. MB51'!$C:$C;'Output Report INV ARUS BARANG'!$AB$6) = rumus excel
+AF9 = =SUMIFS('5. MB51'!$M:$M;'5. MB51'!$A:$A;'Output Report INV ARUS BARANG'!$F9;'5. MB51'!$U:$U;'Output Report INV ARUS BARANG'!AF$7;'5. MB51'!$C:$C;'Output Report INV ARUS BARANG'!$AB$6) = rumus excel
+AG9 = =SUMIFS('5. MB51'!$M:$M;'5. MB51'!$A:$A;'Output Report INV ARUS BARANG'!$F9;'5. MB51'!$U:$U;'Output Report INV ARUS BARANG'!AG$7;'5. MB51'!$C:$C;'Output Report INV ARUS BARANG'!$AB$6) = rumus excel
+AH9 = =SUMIFS('5. MB51'!$M:$M;'5. MB51'!$A:$A;'Output Report INV ARUS BARANG'!$F9;'5. MB51'!$U:$U;'Output Report INV ARUS BARANG'!AH$7;'5. MB51'!$C:$C;'Output Report INV ARUS BARANG'!$AB$6) = rumus excel
+AJ9 = =SUMIFS('5. MB51'!$M:$M;'5. MB51'!$A:$A;'Output Report INV ARUS BARANG'!$F9;'5. MB51'!$U:$U;'Output Report INV ARUS BARANG'!AJ$7;'5. MB51'!$C:$C;'Output Report INV ARUS BARANG'!$AJ$6) = rumus excel
+AK9 = =SUMIFS('5. MB51'!$M:$M;'5. MB51'!$A:$A;'Output Report INV ARUS BARANG'!$F9;'5. MB51'!$U:$U;'Output Report INV ARUS BARANG'!AK$7;'5. MB51'!$C:$C;'Output Report INV ARUS BARANG'!$AJ$6) = rumus excel
+AL9 = =SUMIFS('5. MB51'!$M:$M;'5. MB51'!$A:$A;'Output Report INV ARUS BARANG'!$F9;'5. MB51'!$U:$U;'Output Report INV ARUS BARANG'!AL$7;'5. MB51'!$C:$C;'Output Report INV ARUS BARANG'!$AJ$6) = rumus excel
+AM9 = =SUMIFS('5. MB51'!$M:$M;'5. MB51'!$A:$A;'Output Report INV ARUS BARANG'!$F9;'5. MB51'!$U:$U;'Output Report INV ARUS BARANG'!AM$7;'5. MB51'!$C:$C;'Output Report INV ARUS BARANG'!$AJ$6) = rumus excel
+AN9 = =SUMIFS('5. MB51'!$M:$M;'5. MB51'!$A:$A;'Output Report INV ARUS BARANG'!$F9;'5. MB51'!$U:$U;'Output Report INV ARUS BARANG'!AN$7;'5. MB51'!$C:$C;'Output Report INV ARUS BARANG'!$AJ$6) = rumus excel
+AO9 = =SUMIFS('5. MB51'!$M:$M;'5. MB51'!$A:$A;'Output Report INV ARUS BARANG'!$F9;'5. MB51'!$U:$U;'Output Report INV ARUS BARANG'!AO$7;'5. MB51'!$C:$C;'Output Report INV ARUS BARANG'!$AJ$6) = rumus excel
+AP9 = =SUMIFS('5. MB51'!$M:$M;'5. MB51'!$A:$A;'Output Report INV ARUS BARANG'!$F9;'5. MB51'!$U:$U;'Output Report INV ARUS BARANG'!AP$7;'5. MB51'!$C:$C;'Output Report INV ARUS BARANG'!$AJ$6) = rumus excel
+AQ9 = =SUMIFS('5. MB51'!$M:$M;'5. MB51'!$A:$A;'Output Report INV ARUS BARANG'!$F9;'5. MB51'!$U:$U;'Output Report INV ARUS BARANG'!AQ$7;'5. MB51'!$C:$C;'Output Report INV ARUS BARANG'!$AJ$6) = rumus excel
+AS9 = =SUMIFS('5. MB51'!$M:$M;'5. MB51'!$A:$A;'Output Report INV ARUS BARANG'!$F9;'5. MB51'!$U:$U;'Output Report INV ARUS BARANG'!AS$7;'5. MB51'!$C:$C;'Output Report INV ARUS BARANG'!$AS$6) = rumus excel
+AT9 = =SUMIFS('5. MB51'!$M:$M;'5. MB51'!$A:$A;'Output Report INV ARUS BARANG'!$F9;'5. MB51'!$U:$U;'Output Report INV ARUS BARANG'!AT$7;'5. MB51'!$C:$C;'Output Report INV ARUS BARANG'!$AS$6) = rumus excel
+AU9 = =SUMIFS('5. MB51'!$M:$M;'5. MB51'!$A:$A;'Output Report INV ARUS BARANG'!$F9;'5. MB51'!$U:$U;'Output Report INV ARUS BARANG'!AU$7;'5. MB51'!$C:$C;'Output Report INV ARUS BARANG'!$AS$6) = rumus excel
+AV9 = =SUMIFS('5. MB51'!$M:$M;'5. MB51'!$A:$A;'Output Report INV ARUS BARANG'!$F9;'5. MB51'!$U:$U;'Output Report INV ARUS BARANG'!AV$7;'5. MB51'!$C:$C;'Output Report INV ARUS BARANG'!$AS$6) = rumus excel
+AW9 = =SUMIFS('5. MB51'!$M:$M;'5. MB51'!$A:$A;'Output Report INV ARUS BARANG'!$F9;'5. MB51'!$U:$U;'Output Report INV ARUS BARANG'!AW$7;'5. MB51'!$C:$C;'Output Report INV ARUS BARANG'!$AS$6) = rumus excel
+AX9 = =SUMIFS('5. MB51'!$M:$M;'5. MB51'!$A:$A;'Output Report INV ARUS BARANG'!$F9;'5. MB51'!$U:$U;'Output Report INV ARUS BARANG'!AX$7;'5. MB51'!$C:$C;'Output Report INV ARUS BARANG'!$AS$6) = rumus excel
+AY9 = =SUMIFS('5. MB51'!$M:$M;'5. MB51'!$A:$A;'Output Report INV ARUS BARANG'!$F9;'5. MB51'!$U:$U;'Output Report INV ARUS BARANG'!AY$7;'5. MB51'!$C:$C;'Output Report INV ARUS BARANG'!$AS$6) = rumus excel
+AZ9 = =SUMIFS('5. MB51'!$M:$M;'5. MB51'!$A:$A;'Output Report INV ARUS BARANG'!$F9;'5. MB51'!$U:$U;'Output Report INV ARUS BARANG'!AZ$7;'5. MB51'!$C:$C;'Output Report INV ARUS BARANG'!$AS$6) = rumus excel
+BB9 = =SUMIFS('5. MB51'!$M:$M;'5. MB51'!$D:$D;'Output Report INV ARUS BARANG'!$BB$8;'5. MB51'!$C:$C;'Output Report INV ARUS BARANG'!$BA$7;'5. MB51'!$A:$A;'Output Report INV ARUS BARANG'!F9) = rumus excel
+BC9 = =SUMIFS('5. MB51'!$M:$M;'5. MB51'!$D:$D;'Output Report INV ARUS BARANG'!$BB$8;'5. MB51'!$C:$C;'Output Report INV ARUS BARANG'!$BA$7;'5. MB51'!$A:$A;'Output Report INV ARUS BARANG'!G9) = rumus excel
+BD9 = =V9-BB9-BC9 = rumus excel
+BG9 = =H9+SUM(R9:Z9)+SUM(AJ9:AZ9) = rumus excel 
+BH9 = =I9+SUM(AB9:AH9) = rumus excel
+BI9 = =BG9+BH9 = rumus excel
+BJ9 = =SUMIFS('13. MB5B'!I:I;'13. MB5B'!$B:$B;'Output Report INV ARUS BARANG'!$F9;'13. MB5B'!$A:$A;'Output Report INV ARUS BARANG'!$G$2) = rumus excel
+BK9 = =SUMIFS('13. MB5B'!J:J;'13. MB5B'!$B:$B;'Output Report INV ARUS BARANG'!$F9;'13. MB5B'!$A:$A;'Output Report INV ARUS BARANG'!$G$2) = rumus excel
+BL9 = =SUM(BJ9:BK9) = rumus excel
+BM9 = =BG9-BJ9 = rumus excel
+BN9 = =BH9-BK9 = rumus excel
+BO9 = =BM9+BN9 = rumus excel
+BP9 = =P9-BO9 = rumus excel
+BR9 = =SUMIFS('14. SALDO AKHIR EDS'!$J:$J;'14. SALDO AKHIR EDS'!$G:$G;'Output Report INV ARUS BARANG'!$F9;'14. SALDO AKHIR EDS'!$F:$F;'Output Report INV ARUS BARANG'!$BR$6;'14. SALDO AKHIR EDS'!$A:$A;'Output Report INV ARUS BARANG'!$G$2) = rumus excel
+BS9 = =SUMIFS('14. SALDO AKHIR EDS'!$J:$J;'14. SALDO AKHIR EDS'!$G:$G;'Output Report INV ARUS BARANG'!$F9;'14. SALDO AKHIR EDS'!$F:$F;'Output Report INV ARUS BARANG'!$BS$6;'14. SALDO AKHIR EDS'!$A:$A;'Output Report INV ARUS BARANG'!$G$2) = rumus excel
+BT9 = =BR9+BS9 = rumus excel
+BU9 = =BJ9-BR9 = rumus excel
+BV9 = =BK9-BS9 = rumus excel
+BW9 = =BU9+BV9 = rumus excel
+
+
+
+
+
+di master movement
+
+mv_type: Movement type,
+mv_text: Movement Type Text,
+mv_grouping: Grouping Arus Barang,
+comp_grouping: Grouping Compare,
+storage_loc: Storage location,
+saldo: Saldo,
+
+di master inventory				
+
+plant: PLANT,
+area: NAMA AREA,
+channel: STATUS (yg isinya GT / MT), 
+profit_center: PROFIT CENTER,
+kode_dist: KODE DIST,
+pic_inv: PIC INVENTORY,
+pic_kasbank: PIC KASBANK,
+status_area: STATUS  (yg isinya Scylla atau lIve SAP / EDS)
+
+
+file main ada 5 sheet "Output Report INV ARUS BARANG", "13. MB5B", "14. SALDO AKHIR EDS", "SALDO AWAL MB5B", "SALDO AWAL"
+
+
+
+there is duplication in your file master
+Movement type Z51 Movement Type Text GR Retur Sales Storage location GS00
+Movement type Z61 Movement Type Text GI Inventory. POS Storage location GS00
+Movement type 601 Movement Type Text GD goods issue:delvy Storage location BS00
+Movement type 311 Movement Type Text TF trfr within plant Storage location TR00
+Movement type 653 Movement Type Text GD returns unrestr. Storage location TR00
+Movement type 654 Movement Type Text GD returns unr. rev. Storage location TR00
+Movement type 601 Movement Type Text GD goods issue:delvy Storage location TR00
+Movement type 602 Movement Type Text GD deliv. sOrdr rev. Storage location TR00
+Movement type 311 Movement Type Text TF trfr within plant Storage location AI00
+Movement type 653 Movement Type Text GD returns unrestr. Storage location AI00
+Movement type 654 Movement Type Text GD returns unr. rev. Storage location AI00
+Movement type 601 Movement Type Text GD goods issue:delvy Storage location AI00
+Movement type 602 Movement Type Text GD deliv. sOrdr rev. Storage location AI00
+
+

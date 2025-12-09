@@ -89,86 +89,80 @@ class SheetCache:
                 self.caches['saldo_awal'] = grouped.to_dict()
                 log(f"  SALDO AWAL cache: {len(self.caches['saldo_awal'])} entries")
         
-        # Cache SALDO AWAL MB5B
+        # Cache SALDO AWAL MB5B - FIXED HEADER DETECTION
         if 'SALDO AWAL MB5B' in self.sheets:
             df = self.sheets['SALDO AWAL MB5B']
+            
+            # Find the actual header row
+            header_row_idx = None
             if len(df) > 1:
-                for i in range(min(5, len(df))):
+                for i in range(min(10, len(df))):  # Check first 10 rows
                     row_values = df.iloc[i].astype(str).str.lower().tolist()
                     if 'material' in ' '.join(row_values):
-                        df = df.iloc[i+1:].copy()
-                        df.columns = df.iloc[0] if i == 0 else df.columns
+                        header_row_idx = i
+                        log(f"  MB5B AWAL: Found header at row {i+1} (Excel) / index {i} (pandas)")
                         break
             
+            if header_row_idx is not None:
+                # Set the header row as columns
+                df.columns = df.iloc[header_row_idx]
+                # Keep data AFTER header row
+                df = df.iloc[header_row_idx + 1:].reset_index(drop=True)
+                log(f"  MB5B AWAL: Using data from row {header_row_idx + 2} onwards, shape: {df.shape}")
+            else:
+                log(f"  MB5B AWAL: No header found, using original columns")
+            
             cols = list(df.columns)
+            log(f"  MB5B AWAL columns (first 10): {cols[:10]}")
+            
             mat_col = find_col(cols, ["Material"])
             plant_col = find_col(cols, ["Plnt", "Plant"])
             gs_col = find_col(cols, ["GS"])
             bs_col = find_col(cols, ["BS"])
             
+            log(f"  MB5B AWAL found columns: Material={mat_col}, Plant={plant_col}, GS={gs_col}, BS={bs_col}")
+            
             if mat_col and (gs_col or bs_col):
                 df_clean = df.copy()
                 df_clean['material'] = df_clean[mat_col].astype(str).str.strip()
                 df_clean['plant'] = df_clean[plant_col].astype(str).str.strip() if plant_col else ''
+                
+                # Debug: Show sample data
+                if len(df_clean) > 0:
+                    log(f"  MB5B AWAL sample data (first 3 rows):")
+                    for idx in range(min(3, len(df_clean))):
+                        row = df_clean.iloc[idx]
+                        gs_val = row.get(gs_col, 'N/A') if gs_col else 'N/A'
+                        bs_val = row.get(bs_col, 'N/A') if bs_col else 'N/A'
+                        log(f"    Row {idx+1}: Material={row['material']}, Plant={row['plant']}, GS={gs_val}, BS={bs_val}")
                 
                 if gs_col:
                     df_clean['gs_amount'] = pd.to_numeric(df_clean[gs_col], errors='coerce').fillna(0)
                     grouped_gs = df_clean.groupby(['material', 'plant'], dropna=False)['gs_amount'].sum()
                     self.caches['mb5b_awal_gs'] = grouped_gs.to_dict()
                     log(f"  MB5B AWAL GS cache: {len(self.caches['mb5b_awal_gs'])} entries")
+                    
+                    # Show sample cache entries
+                    if len(self.caches['mb5b_awal_gs']) > 0:
+                        log(f"  MB5B AWAL GS sample entries (first 5):")
+                        for i, (key, val) in enumerate(list(self.caches['mb5b_awal_gs'].items())[:5]):
+                            log(f"    {i+1}. {key} => {val}")
                 
                 if bs_col:
                     df_clean['bs_amount'] = pd.to_numeric(df_clean[bs_col], errors='coerce').fillna(0)
                     grouped_bs = df_clean.groupby(['material', 'plant'], dropna=False)['bs_amount'].sum()
                     self.caches['mb5b_awal_bs'] = grouped_bs.to_dict()
                     log(f"  MB5B AWAL BS cache: {len(self.caches['mb5b_awal_bs'])} entries")
-        
-        # Cache MB5B
-        if '13. MB5B' in self.sheets:
-            df = self.sheets['13. MB5B']
-            cols = list(df.columns)
-            mat_col = find_col(cols, ["Material"])
-            plant_col = find_col(cols, ["Plnt", "Plant"])
-            gs_col = find_col(cols, ["GS"])
-            bs_col = find_col(cols, ["BS"])
-            
-            if mat_col and (gs_col or bs_col):
-                df_clean = df.copy()
-                df_clean['material'] = df_clean[mat_col].astype(str).str.strip()
-                df_clean['plant'] = df_clean[plant_col].astype(str).str.strip() if plant_col else ''
-                
-                if gs_col:
-                    df_clean['gs_amount'] = pd.to_numeric(df_clean[gs_col], errors='coerce').fillna(0)
-                    grouped_gs = df_clean.groupby(['material', 'plant'], dropna=False)['gs_amount'].sum()
-                    self.caches['mb5b_gs'] = grouped_gs.to_dict()
-                    log(f"  MB5B GS cache: {len(self.caches['mb5b_gs'])} entries")
-                
-                if bs_col:
-                    df_clean['bs_amount'] = pd.to_numeric(df_clean[bs_col], errors='coerce').fillna(0)
-                    grouped_bs = df_clean.groupby(['material', 'plant'], dropna=False)['bs_amount'].sum()
-                    self.caches['mb5b_bs'] = grouped_bs.to_dict()
-                    log(f"  MB5B BS cache: {len(self.caches['mb5b_bs'])} entries")
-        
-        # Cache EDS
-        if '14. SALDO AKHIR EDS' in self.sheets:
-            df = self.sheets['14. SALDO AKHIR EDS']
-            cols = list(df.columns)
-            mat_col = find_col(cols, ["Kode Material", "Material"])
-            plant_col = find_col(cols, ["Plant", "Plnt"])
-            sloc_col = find_col(cols, ["Storage Loc", "Storage Location"])
-            amt_col = find_col(cols, ["Closing Stock (pcs)", "QTY", "Closing Stock"])
-            
-            if mat_col and amt_col:
-                df_clean = df.copy()
-                df_clean['material'] = df_clean[mat_col].astype(str).str.strip()
-                df_clean['plant'] = df_clean[plant_col].astype(str).str.strip() if plant_col else ''
-                df_clean['sloc'] = df_clean[sloc_col].astype(str).str.strip() if sloc_col else ''
-                df_clean['amount'] = pd.to_numeric(df_clean[amt_col], errors='coerce').fillna(0)
-                
-                grouped = df_clean.groupby(['material', 'plant', 'sloc'], dropna=False)['amount'].sum()
-                self.caches['eds'] = grouped.to_dict()
-                log(f"  EDS cache: {len(self.caches['eds'])} entries")
-    
+                    
+                    # Show sample cache entries
+                    if len(self.caches['mb5b_awal_bs']) > 0:
+                        log(f"  MB5B AWAL BS sample entries (first 5):")
+                        for i, (key, val) in enumerate(list(self.caches['mb5b_awal_bs'].items())[:5]):
+                            log(f"    {i+1}. {key} => {val}")
+            else:
+                log(f"  MB5B AWAL ERROR: Required columns not found!")
+                log(f"    mat_col={mat_col}, gs_col={gs_col}, bs_col={bs_col}")
+
     def get_saldo_awal(self, material, plant, sloc_type):
         if 'saldo_awal' not in self.caches:
             return 0.0

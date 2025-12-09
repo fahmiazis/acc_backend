@@ -13,8 +13,8 @@ const vs = require('fs-extra')
 const { spawn } = require('child_process')
 const path = require('path')
 const { APP_BE } = process.env
-const pythonPathLocal = 'python'
-const pythonPathProd = '/usr/bin/python3'
+// const pythonPath = 'python'
+const pythonPath = '/usr/bin/python3'
 const borderStyles = {
   top: { style: 'thin' },
   left: { style: 'thin' },
@@ -668,7 +668,7 @@ module.exports = {
 
               
               // Spawn python worker
-              const py = spawn(pythonPathProd, [
+              const py = spawn(pythonPath, [
                 path.join(__dirname, '../workers/generate_inventory_report.py')
               ])
 
@@ -897,7 +897,7 @@ module.exports = {
       const { spawn } = require('child_process')
       const path = require('path')
       
-      const py = spawn(pythonPathProd, [
+      const py = spawn(pythonPath, [
         path.join(__dirname, '../workers/merge_inventory_reports.py')
       ])
       
