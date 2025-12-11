@@ -510,6 +510,7 @@ module.exports = {
   uploadReportInv: async (req, res) => {
     const level = req.user.level // eslint-disable-line
     const username = req.user.name
+    const { type_upload } = req.query
     // if (level === 1) {
     uploadMaster(req, res, async function (err) {
       try {
@@ -522,21 +523,44 @@ module.exports = {
         } else if (err) {
           return response(res, err.message, {}, 401, false)
         }
-        const { name, type, date_report, plant } = req.body
-        const dokumen = `assets/masters/${req.files[0].filename}`
-        const data = {
-          name: name,
-          type: type,
-          path: dokumen,
-          status: 1,
-          plant: plant,
-          date_report: date_report,
-          user_upload: username
+        const { name, type, date_report, plant, list } = req.body
+        if (type_upload === 'bulk') {
+          const rowList = list.split(',')
+          const cekData = []
+          for (let i = 0; i < rowList.length; i++) {
+            const dokumen = `assets/masters/${req.files[0].filename}`
+            const data = {
+              name: name,
+              type: type,
+              path: dokumen,
+              status: 1,
+              plant: rowList[i],
+              date_report: date_report,
+              user_upload: username
+            }
+            const createData = await report_inven.create(data)
+            cekData.push(createData)
+          }
+          if (cekData.length > 0) {
+            return response(res, 'success upload report')
+          }
+        } else {
+          const dokumen = `assets/masters/${req.files[0].filename}`
+          const data = {
+            name: name,
+            type: type,
+            path: dokumen,
+            status: 1,
+            plant: plant,
+            date_report: date_report,
+            user_upload: username
+          }
+          const createData = await report_inven.create(data)
+          if (createData) {
+            return response(res, 'success upload report')
+          }
         }
-        const createData = await report_inven.create(data)
-        if (createData) {
-          return response(res, 'success upload report')
-        }
+        
       } catch (error) {
         return response(res, error.message, {}, 500, false)
       }
