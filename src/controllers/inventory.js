@@ -484,10 +484,10 @@ module.exports = {
           for (let i = 0; i < listId.length; i++) {
             const result = await report_inven.findByPk(listId[i])
             if (result) {
-              const path = result.path
-              fs.unlink(path, function (err) {
-                console.log('success')
-              })
+              // const path = result.path
+              // fs.unlink(path, function (err) {
+              //   console.log('success')
+              // })
               await result.destroy()
               cekData.push(result)
             }
