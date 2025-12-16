@@ -374,6 +374,7 @@ def main():
         if 'Output Report INV ARUS BARANG' in sheets_dict:
             df_existing = sheets_dict['Output Report INV ARUS BARANG']
             if df_existing.shape[0] > 8 and df_existing.shape[1] >= 7:
+                # Start from Excel row 8 (index 7) - CONFIRMED CORRECT
                 df_existing_materials = df_existing.iloc[7:, [1, 5]].copy()
                 df_existing_materials.columns = ['plant', 'material']
                 df_existing_materials = df_existing_materials[
@@ -382,6 +383,7 @@ def main():
                     (df_existing_materials['material'].astype(str).str.strip() != 'nan')
                 ]
                 
+                log("Loading existing materials from main file...")
                 for idx, row in df_existing_materials.iterrows():
                     plant = str(row['plant']).strip().upper()  # NORMALIZE!
                     material = str(row['material']).strip()
@@ -399,6 +401,8 @@ def main():
                             'material': material, 'plant': plant,
                             'area': '', 'kode_dist': '', 'profit_center': ''
                         })
+                
+                log(f"  Found {len(existing_materials)} existing materials")
 
         # Use ALL MB51 data
         df_mb51_filtered = df_mb51.copy()
@@ -654,7 +658,8 @@ def main():
             try:
                 df_out = sheets_dict['Output Report INV ARUS BARANG']
                 if df_out.shape[0] > 8 and df_out.shape[1] >= 7:
-                    for idx in range(7, len(df_out)):  # Start from row 9 (index 8)
+                    # Start from Excel row 8 (index 7) to match material reading
+                    for idx in range(7, len(df_out)):
                         try:
                             row = df_out.iloc[idx]
                             mat_key = str(row.iloc[5]).strip() if len(row) > 5 else ''  # Column F (material)
@@ -1114,11 +1119,23 @@ def main():
         for col in sum_columns:
             ws[f"{col}3"] = f"=SUM({col}9:{col}{last_row})"
         
-        # S1
-        mb51_total_amount = df_mb51_filtered['amount'].sum()
+        # S1 - CRITICAL: Only calculate for plants that exist in main file
+        log("Calculating S1 (ctrl balance MB51)...")
+        
+        # Filter MB51 to only include plants from main file
+        if len(main_file_plants) > 0:
+            mb51_for_s1 = df_mb51_filtered[df_mb51_filtered['plant_clean'].isin(main_file_plants)]
+            mb51_total_amount = mb51_for_s1['amount'].sum()
+            log(f"  MB51 total (filtered by main file plants): {mb51_total_amount:,.2f}")
+        else:
+            # No main file plants, use all MB51
+            mb51_total_amount = df_mb51_filtered['amount'].sum()
+            log(f"  MB51 total (all plants): {mb51_total_amount:,.2f}")
+        
         sum_r3_bb3 = sum([totals.get(col, 0) for col in sum_columns])
         s1_value = mb51_total_amount - sum_r3_bb3
         ws["S1"] = s1_value
+        log(f"  Sum R3:BB3: {sum_r3_bb3:,.2f}")
         log(f"  S1 = {s1_value:.2f}")
         
         # AX2

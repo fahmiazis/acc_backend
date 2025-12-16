@@ -383,7 +383,7 @@ def main():
                 ]
                 
                 for idx, row in df_existing_materials.iterrows():
-                    plant = str(row['plant']).strip()
+                    plant = str(row['plant']).strip().upper()  # NORMALIZE!
                     material = str(row['material']).strip()
                     
                     if plant in inv_map:
@@ -393,10 +393,29 @@ def main():
                             'kode_dist': inv_map[plant]['kode_dist'],
                             'profit_center': inv_map[plant]['profit_center']
                         })
+                    else:
+                        # Plant not in inv_map, but still add with empty values
+                        existing_materials.append({
+                            'material': material, 'plant': plant,
+                            'area': '', 'kode_dist': '', 'profit_center': ''
+                        })
 
         # Use ALL MB51 data
         df_mb51_filtered = df_mb51.copy()
         log(f"Using all MB51 data: {len(df_mb51_filtered)} rows")
+        
+        # CRITICAL: Get unique plants from MB51 for validation
+        # Clean and normalize plant codes
+        df_mb51_filtered['plant_clean'] = df_mb51_filtered['plant'].astype(str).str.strip().str.upper()
+        mb51_plants = set(df_mb51_filtered['plant_clean'].unique())
+        log(f"Unique plants in MB51: {len(mb51_plants)}")
+        log(f"  Sample plants: {sorted(list(mb51_plants))[:10]}")
+        
+        # Also track which materials exist in MB51 per plant
+        mb51_material_plant_pairs = set(
+            zip(df_mb51_filtered['material'], df_mb51_filtered['plant_clean'])
+        )
+        log(f"Unique (material, plant) pairs in MB51: {len(mb51_material_plant_pairs)}")
 
         # NEW APPROACH: Create lookup by (material, plant, storage, mv_type, mv_text)
         log("Creating MB51 lookup by exact mv_type + mv_text...")
@@ -415,10 +434,11 @@ def main():
             log("  Sample empty storage entries (first 3):")
             for idx in range(min(3, len(empty_storage_df))):
                 row = empty_storage_df.iloc[idx]
-                log(f"    Mat={row['material']}, Plant={row['plant']}, MvType={row['mv_type']}, MvText={row['mv_text'][:30]}, Amt={row['amount']}")
+                log(f"    Mat={row['material']}, Plant={row['plant_clean']}, MvType={row['mv_type']}, MvText={row['mv_text'][:30]}, Amt={row['amount']}")
         
+        # CRITICAL: Use plant_clean for grouping!
         grouped_mb51 = df_mb51_filtered.groupby(
-            ['material', 'plant', 'storage', 'mv_type', 'mv_text'],
+            ['material', 'plant_clean', 'storage', 'mv_type', 'mv_text'],
             dropna=False
         ).agg({'amount': 'sum'}).reset_index()
         
@@ -429,14 +449,15 @@ def main():
         if len(empty_storage_sample) > 0:
             log("  === Grouped EMPTY_STORAGE entries (for BB/BC) ===")
             for idx, row in empty_storage_sample.iterrows():
-                log(f"    Mat={row['material']}, Plant={row['plant']}, MvType={row['mv_type']}, MvText={row['mv_text'][:30]}, Amt={row['amount']}")
+                log(f"    Mat={row['material']}, Plant={row['plant_clean']}, MvType={row['mv_type']}, MvText={row['mv_text'][:30]}, Amt={row['amount']}")
         
         # Create lookup: (material, plant, storage, mv_type, mv_text) → amount
+        # CRITICAL: Use plant_clean consistently!
         mb51_lookup = {}
         for _, row in grouped_mb51.iterrows():
             key = (
                 row['material'],
-                row['plant'],
+                row['plant_clean'],  # Use cleaned plant!
                 row['storage'],
                 row['mv_type'],
                 row['mv_text']
@@ -458,38 +479,70 @@ def main():
                 log(f"        MvType='{mvtype}', MvText='{mvtext[:30]}' => {val}")
         
         # Also create mv_type-only lookup for 641/642
+        # But still need to include plant!
         grouped_mv_type = df_mb51_filtered.groupby(
-            ['material', 'plant', 'mv_type'],
+            ['material', 'plant_clean', 'mv_type'],
             dropna=False
         ).agg({'amount': 'sum'}).reset_index()
         
         mb51_lookup_mv = {}
         for _, row in grouped_mv_type.iterrows():
-            key = (row['material'], row['plant'], row['mv_type'])
+            key = (row['material'], row['plant_clean'], row['mv_type'])
             mb51_lookup_mv[key] = row['amount']
         
         log(f"  Created mb51_lookup_mv with {len(mb51_lookup_mv)} keys")
 
-        # Merge materials
+        # Merge materials - Use plants from main file as reference
+        log(f"Merging materials from main file and MB51")
+        
+        # Get unique plants from existing materials (main file)
+        main_file_plants = set()
+        if len(existing_materials) > 0:
+            main_file_plants = set(m['plant'] for m in existing_materials)
+            log(f"  Plants in main file: {sorted(list(main_file_plants))}")
+        
+        # Start with existing materials
+        all_materials = existing_materials.copy()
+        existing_set = set(f"{m['material']}|{m['plant']}" for m in existing_materials)
+        
+        # Add new materials from MB51, but ONLY if plant exists in main file
         mb51_materials = df_mb51_filtered.groupby(
-            ['area', 'plant', 'kode_dist', 'profit_center', 'material'], 
+            ['area', 'plant_clean', 'kode_dist', 'profit_center', 'material'], 
             dropna=False
         ).size().reset_index(name='count')
         
-        existing_set = set(f"{m['material']}|{m['plant']}" for m in existing_materials)
-        new_materials = []
+        new_materials_added = 0
+        skipped_different_plant = 0
         
         for _, mb_row in mb51_materials.iterrows():
-            key = f"{mb_row['material']}|{mb_row['plant']}"
-            if key not in existing_set:
-                new_materials.append({
-                    'material': mb_row['material'], 'plant': mb_row['plant'],
-                    'area': mb_row['area'], 'kode_dist': mb_row['kode_dist'],
-                    'profit_center': mb_row['profit_center']
-                })
+            plant_normalized = str(mb_row['plant_clean']).strip().upper()
+            material = str(mb_row['material']).strip()
+            key = f"{material}|{plant_normalized}"
+            
+            # Skip if material+plant already exists
+            if key in existing_set:
+                continue
+            
+            # CRITICAL: Only add if plant exists in main file
+            if len(main_file_plants) > 0 and plant_normalized not in main_file_plants:
+                skipped_different_plant += 1
+                continue
+            
+            # Add new material with plant from MB51 (but only if plant is in main file)
+            all_materials.append({
+                'material': material, 
+                'plant': plant_normalized,
+                'area': mb_row['area'], 
+                'kode_dist': mb_row['kode_dist'],
+                'profit_center': mb_row['profit_center']
+            })
+            new_materials_added += 1
         
-        all_materials = existing_materials + new_materials
-        log(f"Total materials: {len(all_materials)}")
+        log(f"  Existing materials from main: {len(existing_materials)}")
+        log(f"  New materials added from MB51: {new_materials_added}")
+        if skipped_different_plant > 0:
+            log(f"  Skipped (different plant): {skipped_different_plant}")
+        log(f"  Total materials: {len(all_materials)}")
 
         if len(all_materials) == 0:
             raise ValueError("No materials found")
@@ -592,17 +645,43 @@ def main():
             
             return total
 
-        # Material descriptions
+        # Material descriptions - Load from multiple sources
         log("Loading material descriptions...")
         material_desc_map = {}
         
+        # Source 1: From existing Output Report (main file) - column G
+        if 'Output Report INV ARUS BARANG' in sheets_dict:
+            try:
+                df_out = sheets_dict['Output Report INV ARUS BARANG']
+                if df_out.shape[0] > 8 and df_out.shape[1] >= 7:
+                    for idx in range(7, len(df_out)):  # Start from row 9 (index 8)
+                        try:
+                            row = df_out.iloc[idx]
+                            mat_key = str(row.iloc[5]).strip() if len(row) > 5 else ''  # Column F (material)
+                            mat_desc = str(row.iloc[6]).strip() if len(row) > 6 else ''  # Column G (description)
+                            if mat_key and mat_key != 'nan' and mat_desc and mat_desc != 'nan':
+                                material_desc_map[mat_key] = mat_desc
+                        except:
+                            continue
+                    log(f"  Loaded {len(material_desc_map)} from main file Output Report")
+            except Exception as e:
+                log(f"  Warning loading from main file: {str(e)}")
+        
+        # Source 2: From MB51 (for new materials or missing descriptions)
         if 'material_desc_mb51' in df_mb51.columns:
             desc_df = df_mb51[['material', 'material_desc_mb51']].dropna()
             desc_df = desc_df[desc_df['material_desc_mb51'].astype(str).str.strip() != '']
             desc_df = desc_df.drop_duplicates('material', keep='first')
-            material_desc_map.update(dict(zip(desc_df['material'], desc_df['material_desc_mb51'])))
+            
+            added_from_mb51 = 0
+            for mat, desc in zip(desc_df['material'], desc_df['material_desc_mb51']):
+                if mat not in material_desc_map:
+                    material_desc_map[mat] = desc
+                    added_from_mb51 += 1
+            
+            log(f"  Added {added_from_mb51} from MB51")
         
-        log(f"  Loaded {len(material_desc_map)} descriptions")
+        log(f"  Total: {len(material_desc_map)} descriptions")
 
         # Create workbook
         timestamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
@@ -783,6 +862,7 @@ def main():
         log("Calculating body rows...")
         write_row = 9
         totals = defaultdict(float)
+        plants_not_in_mb51 = set()
         
         num_materials = len(grouped_materials)
         
@@ -792,11 +872,28 @@ def main():
             
             mat_row = grouped_materials.iloc[idx]
             area = str(mat_row['area'])
-            plant = str(mat_row['plant'])
+            plant = str(mat_row['plant']).strip().upper()  # Normalize
             kode_dist = str(mat_row['kode_dist'])
             profit_center = str(mat_row['profit_center'])
             material = str(mat_row['material'])
             material_desc = material_desc_map.get(material, "")
+            
+            # CRITICAL: Check if plant exists in MB51
+            plant_exists_in_mb51 = plant in mb51_plants
+            
+            # Debug untuk semua material di batch pertama
+            if idx < 10:
+                log(f"  [{idx}] Mat={material}, Plant={plant}, Exists={plant_exists_in_mb51}")
+                if plant_exists_in_mb51:
+                    log(f"      → Will lookup data from MB51")
+                else:
+                    log(f"      → Will set all MB51 columns to 0")
+            
+            # Additional check: does this specific material+plant combo exist in MB51?
+            material_plant_exists = (material, plant) in mb51_material_plant_pairs
+            
+            if not plant_exists_in_mb51:
+                plants_not_in_mb51.add(plant)
 
             # Write basic info
             ws.cell(row=write_row, column=1, value=area)
@@ -811,6 +908,7 @@ def main():
             if idx == 0:
                 log(f"  === FIRST MATERIAL DEBUG ===")
                 log(f"  Material: {material}, Plant: {plant}")
+                log(f"  Plant exists in MB51: {plant_exists_in_mb51}")
 
             # SALDO AWAL - Mix of values and formulas
             h9 = sheet_cache.get_saldo_awal(material, plant, "GS")
@@ -837,44 +935,71 @@ def main():
             ws.cell(row=write_row, column=15, value=o9_formula)
             ws.cell(row=write_row, column=16, value=p9_formula)
 
-            # GS00 movements
+            # GS00 movements - SKIP if plant not in MB51
             gs00_values = {}
-            for col, label7 in gs00_movements:
-                val = sumifs_mb51(material, label7, "GS00", plant)
-                gs00_values[col] = val
-                ws.cell(row=write_row, column=get_column_index(col), value=val)
-                totals[col] += val
-                
-                if idx == 0:
-                    log(f"    GS00 {col} ({label7}): {val}")
+            if plant_exists_in_mb51:
+                for col, label7 in gs00_movements:
+                    val = sumifs_mb51(material, label7, "GS00", plant)
+                    gs00_values[col] = val
+                    ws.cell(row=write_row, column=get_column_index(col), value=val)
+                    totals[col] += val
+                    
+                    if idx == 0 and val != 0:
+                        log(f"    GS00 {col} ({label7}): {val}")
+            else:
+                # Plant not in MB51, set all GS00 to 0
+                if idx < 10:
+                    log(f"      → Setting GS00 movements to 0 (plant not in MB51)")
+                for col, label7 in gs00_movements:
+                    gs00_values[col] = 0
+                    ws.cell(row=write_row, column=get_column_index(col), value=0)
 
-            # BS00 movements
+            # BS00 movements - SKIP if plant not in MB51
             bs00_values = {}
-            for col, label7 in bs00_movements:
-                val = sumifs_mb51(material, label7, "BS00", plant)
-                bs00_values[col] = val
-                ws.cell(row=write_row, column=get_column_index(col), value=val)
-                totals[col] += val
+            if plant_exists_in_mb51:
+                for col, label7 in bs00_movements:
+                    val = sumifs_mb51(material, label7, "BS00", plant)
+                    bs00_values[col] = val
+                    ws.cell(row=write_row, column=get_column_index(col), value=val)
+                    totals[col] += val
+            else:
+                for col, label7 in bs00_movements:
+                    bs00_values[col] = 0
+                    ws.cell(row=write_row, column=get_column_index(col), value=0)
 
-            # AI00 movements
+            # AI00 movements - SKIP if plant not in MB51
             ai00_values = {}
-            for col, label7 in ai00_movements:
-                val = sumifs_mb51(material, label7, "AI00", plant)
-                ai00_values[col] = val
-                ws.cell(row=write_row, column=get_column_index(col), value=val)
-                totals[col] += val
+            if plant_exists_in_mb51:
+                for col, label7 in ai00_movements:
+                    val = sumifs_mb51(material, label7, "AI00", plant)
+                    ai00_values[col] = val
+                    ws.cell(row=write_row, column=get_column_index(col), value=val)
+                    totals[col] += val
+            else:
+                for col, label7 in ai00_movements:
+                    ai00_values[col] = 0
+                    ws.cell(row=write_row, column=get_column_index(col), value=0)
 
-            # TR00 movements
+            # TR00 movements - SKIP if plant not in MB51
             tr00_values = {}
-            for col, label7 in tr00_movements:
-                val = sumifs_mb51(material, label7, "TR00", plant)
-                tr00_values[col] = val
-                ws.cell(row=write_row, column=get_column_index(col), value=val)
-                totals[col] += val
+            if plant_exists_in_mb51:
+                for col, label7 in tr00_movements:
+                    val = sumifs_mb51(material, label7, "TR00", plant)
+                    tr00_values[col] = val
+                    ws.cell(row=write_row, column=get_column_index(col), value=val)
+                    totals[col] += val
+            else:
+                for col, label7 in tr00_movements:
+                    tr00_values[col] = 0
+                    ws.cell(row=write_row, column=get_column_index(col), value=0)
 
-            # 641/642 - Use mv_type from row 8 labels
-            bb9 = sumifs_mb51(material, None, None, plant, mv_type_direct="641")
-            bc9 = sumifs_mb51(material, None, None, plant, mv_type_direct="642")
+            # 641/642 - SKIP if plant not in MB51
+            if plant_exists_in_mb51:
+                bb9 = sumifs_mb51(material, None, None, plant, mv_type_direct="641")
+                bc9 = sumifs_mb51(material, None, None, plant, mv_type_direct="642")
+            else:
+                bb9 = 0
+                bc9 = 0
             
             # BD9 - FORMULA ONLY (not calculated)
             bd9_formula = f"=V{write_row}-BB{write_row}-BC{write_row}"
@@ -882,8 +1007,9 @@ def main():
             ws.cell(row=write_row, column=get_column_index("BB"), value=bb9)
             ws.cell(row=write_row, column=get_column_index("BC"), value=bc9)
             ws.cell(row=write_row, column=get_column_index("BD"), value=bd9_formula)
-            totals["BB"] += bb9
-            totals["BC"] += bc9
+            if plant_exists_in_mb51:
+                totals["BB"] += bb9
+                totals["BC"] += bc9
             # BD is formula, don't add to totals
 
             # END STOCK - Some are formulas
@@ -945,6 +1071,13 @@ def main():
             write_row += 1
 
         log(f"Total rows written: {write_row - 9}")
+        
+        # Show plants not in MB51
+        if len(plants_not_in_mb51) > 0:
+            log(f"  === WARNING: Plants in Output Report but NOT in MB51 ===")
+            log(f"  Total: {len(plants_not_in_mb51)} plants")
+            log(f"  Plants: {sorted(list(plants_not_in_mb51))}")
+            log(f"  These plants have MB51 columns (R-BD) set to 0")
         
         # Show lookup stats
         log(f"  === LOOKUP STATISTICS ===")
