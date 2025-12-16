@@ -1134,6 +1134,11 @@ def main():
         
         sum_r3_bb3 = sum([totals.get(col, 0) for col in sum_columns])
         s1_value = mb51_total_amount - sum_r3_bb3
+        
+        # CRITICAL: Round to avoid floating point precision errors
+        # 6.18456397205591E-11 should be 0
+        s1_value = round(s1_value, 2)
+        
         ws["S1"] = s1_value
         log(f"  Sum R3:BB3: {sum_r3_bb3:,.2f}")
         log(f"  S1 = {s1_value:.2f}")
@@ -1160,6 +1165,10 @@ def main():
                 log(f"  Warning: {str(e)}")
         
         bl2_value = sum_bl - sum_mb5b_pq
+        
+        # CRITICAL: Round to avoid floating point precision errors
+        bl2_value = round(bl2_value, 2)
+        
         ws["BL2"] = bl2_value
         log(f"  BL2 = {bl2_value:.2f}")
 
