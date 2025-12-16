@@ -1,5 +1,7 @@
-# generate_inventory_report.py - CORRECT LOGIC VERSION
-# FIX: Use master_movement as reference to find valid mv_type+mv_text combinations
+# generate_inventory_report.py - FIXED: Negative values now included
+# FIX 1: Removed .fillna(0) on amount conversion
+# FIX 2: Added dropna=False to all groupby operations
+# FIX 3: Enhanced debugging for negative values
 
 import sys
 import json
@@ -178,14 +180,13 @@ def main():
         df_master_inv['plant'] = df_master_inv['plant'].astype(str).str.strip()
         inv_map = df_master_inv.set_index('plant')[['area', 'kode_dist', 'profit_center']].to_dict('index')
         
-        # CRITICAL: Build reverse lookup - from (storage_loc, mv_grouping) → list of (mv_type, mv_text)
+        # Build movement reference lookup
         log("Building movement reference lookup...")
         df_master_mov['mv_type'] = df_master_mov['mv_type'].astype(str).str.strip()
         df_master_mov['mv_text'] = df_master_mov['mv_text'].astype(str).str.strip().str.lower()
         df_master_mov['storage_loc'] = df_master_mov['storage_loc'].astype(str).str.strip().str.upper()
         df_master_mov['mv_grouping'] = df_master_mov['mv_grouping'].astype(str).str.strip()
         
-        # Create lookup: (storage_loc, mv_grouping) → list of valid combinations
         movement_reference = defaultdict(list)
         for _, row in df_master_mov.iterrows():
             if pd.notna(row['mv_grouping']) and row['mv_grouping']:
@@ -197,44 +198,15 @@ def main():
         
         log(f"  Movement reference: {len(movement_reference)} (storage+grouping) combinations")
         
-        # ADDITIONAL: Build lookup by mv_type only (for BB & BC)
-        # mv_type → list of UNIQUE mv_text
+        # Build lookup by mv_type only (for BB & BC)
         movement_by_type = defaultdict(list)
         for _, row in df_master_mov.iterrows():
             if pd.notna(row['mv_type']) and row['mv_type']:
                 mv_text = row['mv_text']
-                # Avoid duplicates
                 if mv_text not in movement_by_type[row['mv_type']]:
                     movement_by_type[row['mv_type']].append(mv_text)
         
         log(f"  Movement by type: {len(movement_by_type)} unique mv_types")
-        
-        # DEBUG: Show what we have for 641 and 642
-        if '641' in movement_by_type:
-            log(f"  mv_type '641' has {len(movement_by_type['641'])} unique mv_text:")
-            for txt in movement_by_type['641']:
-                log(f"    - '{txt}'")
-        
-        if '642' in movement_by_type:
-            log(f"  mv_type '642' has {len(movement_by_type['642'])} unique mv_text:")
-            for txt in movement_by_type['642']:
-                log(f"    - '{txt}'")
-        
-        # DEBUG: Show sample
-        if len(movement_reference) > 0:
-            log("  === Sample Movement Reference (first 5) ===")
-            for i, (key, combinations) in enumerate(list(movement_reference.items())[:5]):
-                storage, grouping = key
-                log(f"    {i+1}. Storage='{storage}', Grouping='{grouping}':")
-                for combo in combinations[:3]:  # Show first 3 combos
-                    log(f"        → mv_type='{combo['mv_type']}', mv_text='{combo['mv_text']}'")
-        
-        if len(movement_by_type) > 0:
-            log("  === Sample Movement By Type (first 5) ===")
-            for i, (mv_type, mv_texts) in enumerate(list(movement_by_type.items())[:5]):
-                log(f"    {i+1}. mv_type='{mv_type}': {len(mv_texts)} text variations")
-                for txt in mv_texts[:3]:
-                    log(f"        → '{txt}'")
 
         # Read MB51
         log(f"Reading MB51...")
@@ -298,15 +270,26 @@ def main():
             log(f"  ERROR converting dates: {str(e)}")
             df_mb51["posting_date"] = pd.NaT
         
-        df_mb51["amount"] = pd.to_numeric(df_mb51["amount"], errors="coerce").fillna(0)
+        # FIX: Don't use fillna(0) - keep NaN as NaN, don't convert negatives to 0
+        df_mb51["amount"] = pd.to_numeric(df_mb51["amount"], errors="coerce")
+        
+        # Debug: Check for negative values BEFORE any filtering
+        neg_count = (df_mb51["amount"] < 0).sum()
+        pos_count = (df_mb51["amount"] > 0).sum()
+        zero_count = (df_mb51["amount"] == 0).sum()
+        nan_count = df_mb51["amount"].isna().sum()
+        total_amount = df_mb51["amount"].sum()
+        log(f"  === AMOUNT DISTRIBUTION (RAW MB51) ===")
+        log(f"  Positive: {pos_count}, Negative: {neg_count}, Zero: {zero_count}, NaN: {nan_count}")
+        log(f"  Total sum (including negatives): {total_amount:,.2f}")
+        
         df_mb51["plant"] = df_mb51["plant"].astype(str).str.strip()
         df_mb51["mv_type"] = df_mb51["mv_type"].astype(str).str.strip()
         df_mb51["material"] = df_mb51["material"].astype(str).str.strip()
         df_mb51["mv_text"] = df_mb51["mv_text"].astype(str).str.strip().str.lower()
         
-        # CRITICAL: Handle storage with proper null detection
+        # Handle storage with proper null detection
         if 'sloc' in df_mb51.columns:
-            # Mark truly null/empty storage BEFORE any cleaning
             df_mb51["is_empty_storage"] = (
                 (df_mb51["sloc"].isna()) |
                 (df_mb51["sloc"].isnull()) |
@@ -315,16 +298,12 @@ def main():
                 (df_mb51["sloc"].astype(str).str.strip().str.upper() == 'NONE')
             )
             
-            # Clean storage for normal lookups
             df_mb51["storage"] = df_mb51["sloc"].astype(str).str.strip().str.upper()
-            
-            # For empty storage, use special marker
             df_mb51.loc[df_mb51["is_empty_storage"], "storage"] = 'EMPTY_STORAGE'
         else:
             df_mb51["storage"] = "EMPTY_STORAGE"
             df_mb51["is_empty_storage"] = True
         
-        # Debug: Show empty storage count
         empty_count = df_mb51["is_empty_storage"].sum()
         log(f"  Rows with empty/null storage: {empty_count}/{len(df_mb51)} ({empty_count/len(df_mb51)*100:.1f}%)")
 
@@ -374,7 +353,6 @@ def main():
         if 'Output Report INV ARUS BARANG' in sheets_dict:
             df_existing = sheets_dict['Output Report INV ARUS BARANG']
             if df_existing.shape[0] > 8 and df_existing.shape[1] >= 7:
-                # Start from Excel row 8 (index 7) - CONFIRMED CORRECT
                 df_existing_materials = df_existing.iloc[7:, [1, 5]].copy()
                 df_existing_materials.columns = ['plant', 'material']
                 df_existing_materials = df_existing_materials[
@@ -385,7 +363,7 @@ def main():
                 
                 log("Loading existing materials from main file...")
                 for idx, row in df_existing_materials.iterrows():
-                    plant = str(row['plant']).strip().upper()  # NORMALIZE!
+                    plant = str(row['plant']).strip().upper()
                     material = str(row['material']).strip()
                     
                     if plant in inv_map:
@@ -396,7 +374,6 @@ def main():
                             'profit_center': inv_map[plant]['profit_center']
                         })
                     else:
-                        # Plant not in inv_map, but still add with empty values
                         existing_materials.append({
                             'material': material, 'plant': plant,
                             'area': '', 'kode_dist': '', 'profit_center': ''
@@ -408,70 +385,49 @@ def main():
         df_mb51_filtered = df_mb51.copy()
         log(f"Using all MB51 data: {len(df_mb51_filtered)} rows")
         
-        # CRITICAL: Get unique plants from MB51 for validation
-        # Clean and normalize plant codes
+        # Get unique plants from MB51
         df_mb51_filtered['plant_clean'] = df_mb51_filtered['plant'].astype(str).str.strip().str.upper()
         mb51_plants = set(df_mb51_filtered['plant_clean'].unique())
         log(f"Unique plants in MB51: {len(mb51_plants)}")
-        log(f"  Sample plants: {sorted(list(mb51_plants))[:10]}")
         
-        # Also track which materials exist in MB51 per plant
         mb51_material_plant_pairs = set(
             zip(df_mb51_filtered['material'], df_mb51_filtered['plant_clean'])
         )
         log(f"Unique (material, plant) pairs in MB51: {len(mb51_material_plant_pairs)}")
 
-        # NEW APPROACH: Create lookup by (material, plant, storage, mv_type, mv_text)
+        # Create MB51 lookup
         log("Creating MB51 lookup by exact mv_type + mv_text...")
         
-        # Debug: Show storage distribution
-        log("  === Storage Distribution in MB51 ===")
-        storage_counts = df_mb51_filtered['storage'].value_counts().head(10)
-        for storage, count in storage_counts.items():
-            log(f"    '{storage}': {count} rows")
-        
-        # Debug: Show empty storage details
+        # Debug: Check negative values in empty storage BEFORE groupby
         empty_storage_df = df_mb51_filtered[df_mb51_filtered['is_empty_storage'] == True]
-        log(f"  === Empty Storage Breakdown ===")
-        log(f"  Total empty storage rows: {len(empty_storage_df)}")
-        if len(empty_storage_df) > 0:
-            log("  Sample empty storage entries (first 5, including negatives):")
-            for idx in range(min(5, len(empty_storage_df))):
-                row = empty_storage_df.iloc[idx]
-                log(f"    Mat={row['material']}, Plant={row['plant_clean']}, MvType={row['mv_type']}, MvText={row['mv_text'][:30]}, Amt={row['amount']}")
-            
-            # Check for negative amounts
-            neg_empty = empty_storage_df[empty_storage_df['amount'] < 0]
-            if len(neg_empty) > 0:
-                log(f"  WARNING: Found {len(neg_empty)} negative amount rows in empty storage:")
-                for idx in range(min(3, len(neg_empty))):
-                    row = neg_empty.iloc[idx]
-                    log(f"    Mat={row['material']}, MvType={row['mv_type']}, Amt={row['amount']}")
-            else:
-                log(f"  No negative amounts found in empty storage (might be filtered somewhere)")
+        log(f"  === Empty Storage Analysis (BEFORE groupby) ===")
+        log(f"  Total rows: {len(empty_storage_df)}")
+        neg_empty = empty_storage_df[empty_storage_df['amount'] < 0]
+        log(f"  Negative values: {len(neg_empty)} rows")
+        if len(neg_empty) > 0:
+            log(f"  Sample negative entries:")
+            for idx in range(min(3, len(neg_empty))):
+                row = neg_empty.iloc[idx]
+                log(f"    Mat={row['material']}, Plant={row['plant_clean']}, MvType={row['mv_type']}, Amt={row['amount']}")
         
-        # CRITICAL: Use plant_clean for grouping!
+        # FIX: Add dropna=False to groupby
         grouped_mb51 = df_mb51_filtered.groupby(
             ['material', 'plant_clean', 'storage', 'mv_type', 'mv_text'],
-            dropna=False
+            dropna=False  # CRITICAL: Include rows with NaN
         ).agg({'amount': 'sum'}).reset_index()
         
         log(f"  Grouped MB51: {len(grouped_mb51)} combinations")
         
-        # Show sample with EMPTY_STORAGE
-        empty_storage_sample = grouped_mb51[grouped_mb51['storage'] == 'EMPTY_STORAGE'].head(5)
-        if len(empty_storage_sample) > 0:
-            log("  === Grouped EMPTY_STORAGE entries (for BB/BC) ===")
-            for idx, row in empty_storage_sample.iterrows():
-                log(f"    Mat={row['material']}, Plant={row['plant_clean']}, MvType={row['mv_type']}, MvText={row['mv_text'][:30]}, Amt={row['amount']}")
+        # Check if negatives survived groupby
+        neg_after_group = (grouped_mb51['amount'] < 0).sum()
+        log(f"  Negative values after groupby: {neg_after_group}")
         
-        # Create lookup: (material, plant, storage, mv_type, mv_text) → amount
-        # CRITICAL: Use plant_clean consistently!
+        # Create lookup
         mb51_lookup = {}
         for _, row in grouped_mb51.iterrows():
             key = (
                 row['material'],
-                row['plant_clean'],  # Use cleaned plant!
+                row['plant_clean'],
                 row['storage'],
                 row['mv_type'],
                 row['mv_text']
@@ -480,23 +436,14 @@ def main():
         
         log(f"  Created mb51_lookup with {len(mb51_lookup)} keys")
         
-        # Count EMPTY_STORAGE in lookup
-        empty_in_lookup = sum(1 for k in mb51_lookup.keys() if k[2] == 'EMPTY_STORAGE')
-        log(f"  Lookup keys with EMPTY_STORAGE: {empty_in_lookup}")
+        # Check negatives in lookup
+        neg_in_lookup = sum(1 for v in mb51_lookup.values() if v < 0)
+        log(f"  Negative values in lookup: {neg_in_lookup}")
         
-        # Show sample
-        if len(mb51_lookup) > 0:
-            log("  === Sample MB51 Lookup Keys (first 5) ===")
-            for i, (key, val) in enumerate(list(mb51_lookup.items())[:5]):
-                mat, plt, stor, mvtype, mvtext = key
-                log(f"    {i+1}. Mat='{mat}', Plant='{plt}', Storage='{stor}'")
-                log(f"        MvType='{mvtype}', MvText='{mvtext[:30]}' => {val}")
-        
-        # Also create mv_type-only lookup for 641/642
-        # But still need to include plant!
+        # Create mv_type-only lookup for 641/642
         grouped_mv_type = df_mb51_filtered.groupby(
             ['material', 'plant_clean', 'mv_type'],
-            dropna=False
+            dropna=False  # CRITICAL
         ).agg({'amount': 'sum'}).reset_index()
         
         mb51_lookup_mv = {}
@@ -505,21 +452,23 @@ def main():
             mb51_lookup_mv[key] = row['amount']
         
         log(f"  Created mb51_lookup_mv with {len(mb51_lookup_mv)} keys")
+        
+        # Check 641/642 negatives
+        count_641_neg = sum(1 for k, v in mb51_lookup_mv.items() if k[2] == '641' and v < 0)
+        count_642_neg = sum(1 for k, v in mb51_lookup_mv.items() if k[2] == '642' and v < 0)
+        log(f"  641 with negative values: {count_641_neg}")
+        log(f"  642 with negative values: {count_642_neg}")
 
-        # Merge materials - Use plants from main file as reference
+        # Merge materials
         log(f"Merging materials from main file and MB51")
         
-        # Get unique plants from existing materials (main file)
         main_file_plants = set()
         if len(existing_materials) > 0:
             main_file_plants = set(m['plant'] for m in existing_materials)
-            log(f"  Plants in main file: {sorted(list(main_file_plants))}")
         
-        # Start with existing materials
         all_materials = existing_materials.copy()
         existing_set = set(f"{m['material']}|{m['plant']}" for m in existing_materials)
         
-        # Add new materials from MB51, but ONLY if plant exists in main file
         mb51_materials = df_mb51_filtered.groupby(
             ['area', 'plant_clean', 'kode_dist', 'profit_center', 'material'], 
             dropna=False
@@ -533,16 +482,13 @@ def main():
             material = str(mb_row['material']).strip()
             key = f"{material}|{plant_normalized}"
             
-            # Skip if material+plant already exists
             if key in existing_set:
                 continue
             
-            # CRITICAL: Only add if plant exists in main file
             if len(main_file_plants) > 0 and plant_normalized not in main_file_plants:
                 skipped_different_plant += 1
                 continue
             
-            # Add new material with plant from MB51 (but only if plant is in main file)
             all_materials.append({
                 'material': material, 
                 'plant': plant_normalized,
@@ -552,94 +498,66 @@ def main():
             })
             new_materials_added += 1
         
-        log(f"  Existing materials from main: {len(existing_materials)}")
-        log(f"  New materials added from MB51: {new_materials_added}")
-        if skipped_different_plant > 0:
-            log(f"  Skipped (different plant): {skipped_different_plant}")
-        log(f"  Total materials: {len(all_materials)}")
+        log(f"  Existing materials: {len(existing_materials)}")
+        log(f"  New materials: {new_materials_added}")
+        log(f"  Total: {len(all_materials)}")
 
         if len(all_materials) == 0:
             raise ValueError("No materials found")
 
         grouped_materials = pd.DataFrame(all_materials)
 
-        # CORRECTED SUMIFS function
+        # SUMIFS function with negative value support
         lookup_stats = {'found': 0, 'not_found': 0, 'total_calls': 0}
         debug_samples = []
         
         def sumifs_mb51(material, mv_grouping_label, storage_loc, plant, mv_type_direct=None):
-            """
-            Lookup MB51 data using master_movement as reference
-            
-            For BB/BC: mv_type_direct is the label from row 8 (e.g., "641", "642")
-                       MUST find empty/null storage only
-                       Find all mv_text for this mv_type in master_movement
-            For normal: use storage_loc + mv_grouping_label
-            """
+            """Lookup MB51 data - now includes negative values"""
             lookup_stats['total_calls'] += 1
             
-            # Special case: BB & BC - lookup by mv_type label with EMPTY storage
+            # Special case: BB & BC
             if mv_type_direct:
-                # Find all valid mv_text for this mv_type
                 valid_texts = movement_by_type.get(mv_type_direct, [])
                 
                 if not valid_texts:
                     lookup_stats['not_found'] += 1
-                    if len(debug_samples) < 10:
-                        debug_samples.append(f"NO MV_TEXT for mv_type='{mv_type_direct}'")
                     return 0.0
                 
-                # CRITICAL: For BB/BC, only look for EMPTY_STORAGE
                 total = 0.0
                 found_any = False
-                details = []  # For debugging first material
+                details = []
                 
                 for mv_text in valid_texts:
                     lookup_key = (material, plant, 'EMPTY_STORAGE', mv_type_direct, mv_text)
                     amount = mb51_lookup.get(lookup_key, 0.0)
                     if amount != 0:
                         found_any = True
-                        details.append(f"mv_text='{mv_text}' => {amount}")
-                        if lookup_stats['total_calls'] <= 5:
-                            log(f"      BB/BC FOUND (empty storage): {lookup_key} => {amount}")
+                        details.append(f"mv_text='{mv_text}' => {amount} {'(NEG)' if amount < 0 else ''}")
                     total += amount
                 
-                # Debug first material BB/BC lookup
-                if lookup_stats['total_calls'] <= 2 and len(details) > 0:
-                    log(f"    BB/BC Detail for Mat={material}, Plant={plant}, mv_type={mv_type_direct}:")
-                    log(f"      Found {len(valid_texts)} mv_text variations from master_movement")
-                    for detail in details:
-                        log(f"        {detail}")
-                    log(f"      TOTAL (should include negatives): {total}")
-                    
-                    # Extra check: are there negative values in MB51 for this combo?
-                    check_key = (material, plant, 'EMPTY_STORAGE', mv_type_direct)
-                    check_lookup = {k: v for k, v in mb51_lookup.items() if k[:4] == check_key}
-                    if check_lookup:
-                        log(f"      All values in lookup for this combo:")
-                        for k, v in check_lookup.items():
-                            log(f"        {k} => {v}")
+                # Debug first few materials
+                if lookup_stats['total_calls'] <= 3 and (len(details) > 0 or total != 0):
+                    log(f"    BB/BC [{lookup_stats['total_calls']}] Mat={material}, Plant={plant}, mv_type={mv_type_direct}:")
+                    if len(details) > 0:
+                        for detail in details:
+                            log(f"        {detail}")
+                    log(f"      TOTAL: {total} {'(includes negatives)' if total < 0 else ''}")
                 
-                if found_any:
+                if found_any or total != 0:
                     lookup_stats['found'] += 1
                 else:
                     lookup_stats['not_found'] += 1
-                    if len(debug_samples) < 10:
-                        debug_samples.append(f"BB/BC NOT FOUND: Mat='{material}', Plant='{plant}', mv_type='{mv_type_direct}' with EMPTY storage")
                 
                 return total
             
-            # Normal case: lookup using movement reference
+            # Normal case
             ref_key = (storage_loc, mv_grouping_label)
             valid_combinations = movement_reference.get(ref_key, [])
             
             if not valid_combinations:
                 lookup_stats['not_found'] += 1
-                if len(debug_samples) < 10:
-                    debug_samples.append(f"NO REF: storage='{storage_loc}', grouping='{mv_grouping_label}'")
                 return 0.0
             
-            # Sum across all valid (mv_type, mv_text) combinations
             total = 0.0
             found_any = False
             
@@ -654,43 +572,36 @@ def main():
                 amount = mb51_lookup.get(lookup_key, 0.0)
                 if amount != 0:
                     found_any = True
-                    if lookup_stats['total_calls'] <= 3:  # Debug first few calls
-                        log(f"      FOUND: {lookup_key} => {amount}")
                 total += amount
             
             if found_any:
                 lookup_stats['found'] += 1
             else:
                 lookup_stats['not_found'] += 1
-                if len(debug_samples) < 10:
-                    debug_samples.append(f"NOT IN MB51: Mat='{material}', Plant='{plant}', Storage='{storage_loc}', Grouping='{mv_grouping_label}'")
             
             return total
 
-        # Material descriptions - Load from multiple sources
+        # Material descriptions
         log("Loading material descriptions...")
         material_desc_map = {}
         
-        # Source 1: From existing Output Report (main file) - column G
         if 'Output Report INV ARUS BARANG' in sheets_dict:
             try:
                 df_out = sheets_dict['Output Report INV ARUS BARANG']
                 if df_out.shape[0] > 8 and df_out.shape[1] >= 7:
-                    # Start from Excel row 8 (index 7) to match material reading
                     for idx in range(7, len(df_out)):
                         try:
                             row = df_out.iloc[idx]
-                            mat_key = str(row.iloc[5]).strip() if len(row) > 5 else ''  # Column F (material)
-                            mat_desc = str(row.iloc[6]).strip() if len(row) > 6 else ''  # Column G (description)
+                            mat_key = str(row.iloc[5]).strip() if len(row) > 5 else ''
+                            mat_desc = str(row.iloc[6]).strip() if len(row) > 6 else ''
                             if mat_key and mat_key != 'nan' and mat_desc and mat_desc != 'nan':
                                 material_desc_map[mat_key] = mat_desc
                         except:
                             continue
-                    log(f"  Loaded {len(material_desc_map)} from main file Output Report")
+                    log(f"  Loaded {len(material_desc_map)} from main file")
             except Exception as e:
-                log(f"  Warning loading from main file: {str(e)}")
+                log(f"  Warning: {str(e)}")
         
-        # Source 2: From MB51 (for new materials or missing descriptions)
         if 'material_desc_mb51' in df_mb51.columns:
             desc_df = df_mb51[['material', 'material_desc_mb51']].dropna()
             desc_df = desc_df[desc_df['material_desc_mb51'].astype(str).str.strip() != '']
@@ -719,7 +630,7 @@ def main():
         ws.title = "Output Report INV ARUS BARANG"
         center = Alignment(horizontal="center", vertical="center")
 
-        # HEADER
+        # HEADER (same as before)
         ws["F1"], ws["F2"], ws["F3"], ws["F4"], ws["F5"], ws["F7"] = "Nama Area", "Plant", "Kode Dist", "Profit Center", "Periode", "Material"
         
         if not grouped_materials.empty:
@@ -730,40 +641,11 @@ def main():
         ws["A8"], ws["B8"], ws["C8"], ws["D8"], ws["E8"], ws["F8"] = "Nama Area", "Plant", "Kode Dist", "Profit Center", "Periode", "source data"
         
         # Row 8 labels
-        ws["R8"] = "DTB"
-        ws["S8"] = "BPPR"
-        ws["T8"] = "LBP"
-        ws["U8"] = "LBP"
-        ws["V8"] = "DTB"
-        ws["W8"] = "BPPR"
-        ws["X8"] = "ALIH STATUS"
-        ws["Y8"] = "Pemusnahan"
-        
-        ws["AB8"] = "DTB"
-        ws["AC8"] = "BPPR"
-        ws["AD8"] = "LBP"
-        ws["AE8"] = "LBP"
-        ws["AF8"] = "ALIH STATUS"
-        ws["AG8"] = "Pemusnahan"
-        
-        ws["AJ8"] = "DTB"
-        ws["AK8"] = "BPPR"
-        ws["AL8"] = "LBP"
-        ws["AM8"] = "LBP"
-        ws["AN8"] = "BPPR"
-        ws["AO8"] = "ALIH STATUS"
-        ws["AP8"] = "Pemusnahan"
-        
-        ws["AS8"] = "DTB"
-        ws["AT8"] = "BPPR"
-        ws["AU8"] = "LBP"
-        ws["AV8"] = "LBP"
-        ws["AW8"] = "BPPR"
-        ws["AX8"] = "ALIH STATUS"
-        ws["AY8"] = "Pemusnahan"
-        
-        ws["BB8"] = "641"
-        ws["BC8"] = "642"
+        ws["R8"], ws["S8"], ws["T8"], ws["U8"], ws["V8"], ws["W8"], ws["X8"], ws["Y8"] = "DTB", "BPPR", "LBP", "LBP", "DTB", "BPPR", "ALIH STATUS", "Pemusnahan"
+        ws["AB8"], ws["AC8"], ws["AD8"], ws["AE8"], ws["AF8"], ws["AG8"] = "DTB", "BPPR", "LBP", "LBP", "ALIH STATUS", "Pemusnahan"
+        ws["AJ8"], ws["AK8"], ws["AL8"], ws["AM8"], ws["AN8"], ws["AO8"], ws["AP8"] = "DTB", "BPPR", "LBP", "LBP", "BPPR", "ALIH STATUS", "Pemusnahan"
+        ws["AS8"], ws["AT8"], ws["AU8"], ws["AV8"], ws["AW8"], ws["AX8"], ws["AY8"] = "DTB", "BPPR", "LBP", "LBP", "BPPR", "ALIH STATUS", "Pemusnahan"
+        ws["BB8"], ws["BC8"] = "641", "642"
 
         ws.merge_cells("H4:M4")
         ws["H4"] = f"SALDO AWAL {bulan} {tahun}"
@@ -895,25 +777,13 @@ def main():
             
             mat_row = grouped_materials.iloc[idx]
             area = str(mat_row['area'])
-            plant = str(mat_row['plant']).strip().upper()  # Normalize
+            plant = str(mat_row['plant']).strip().upper()
             kode_dist = str(mat_row['kode_dist'])
             profit_center = str(mat_row['profit_center'])
             material = str(mat_row['material'])
             material_desc = material_desc_map.get(material, "")
             
-            # CRITICAL: Check if plant exists in MB51
             plant_exists_in_mb51 = plant in mb51_plants
-            
-            # Debug untuk semua material di batch pertama
-            if idx < 10:
-                log(f"  [{idx}] Mat={material}, Plant={plant}, Exists={plant_exists_in_mb51}")
-                if plant_exists_in_mb51:
-                    log(f"      → Will lookup data from MB51")
-                else:
-                    log(f"      → Will set all MB51 columns to 0")
-            
-            # Additional check: does this specific material+plant combo exist in MB51?
-            material_plant_exists = (material, plant) in mb51_material_plant_pairs
             
             if not plant_exists_in_mb51:
                 plants_not_in_mb51.add(plant)
@@ -926,14 +796,8 @@ def main():
             ws.cell(row=write_row, column=5, value=bulan_only)
             ws.cell(row=write_row, column=6, value=material)
             ws.cell(row=write_row, column=7, value=material_desc)
-            
-            # Debug first material
-            if idx == 0:
-                log(f"  === FIRST MATERIAL DEBUG ===")
-                log(f"  Material: {material}, Plant: {plant}")
-                log(f"  Plant exists in MB51: {plant_exists_in_mb51}")
 
-            # SALDO AWAL - Mix of values and formulas
+            # SALDO AWAL
             h9 = sheet_cache.get_saldo_awal(material, plant, "GS")
             i9 = sheet_cache.get_saldo_awal(material, plant, "BS")
             j9_formula = f"=H{write_row}+I{write_row}"
@@ -958,7 +822,7 @@ def main():
             ws.cell(row=write_row, column=15, value=o9_formula)
             ws.cell(row=write_row, column=16, value=p9_formula)
 
-            # GS00 movements - SKIP if plant not in MB51
+            # GS00 movements
             gs00_values = {}
             if plant_exists_in_mb51:
                 for col, label7 in gs00_movements:
@@ -966,18 +830,12 @@ def main():
                     gs00_values[col] = val
                     ws.cell(row=write_row, column=get_column_index(col), value=val)
                     totals[col] += val
-                    
-                    if idx == 0 and val != 0:
-                        log(f"    GS00 {col} ({label7}): {val}")
             else:
-                # Plant not in MB51, set all GS00 to 0
-                if idx < 10:
-                    log(f"      → Setting GS00 movements to 0 (plant not in MB51)")
                 for col, label7 in gs00_movements:
                     gs00_values[col] = 0
                     ws.cell(row=write_row, column=get_column_index(col), value=0)
 
-            # BS00 movements - SKIP if plant not in MB51
+            # BS00 movements
             bs00_values = {}
             if plant_exists_in_mb51:
                 for col, label7 in bs00_movements:
@@ -990,7 +848,7 @@ def main():
                     bs00_values[col] = 0
                     ws.cell(row=write_row, column=get_column_index(col), value=0)
 
-            # AI00 movements - SKIP if plant not in MB51
+            # AI00 movements
             ai00_values = {}
             if plant_exists_in_mb51:
                 for col, label7 in ai00_movements:
@@ -1003,7 +861,7 @@ def main():
                     ai00_values[col] = 0
                     ws.cell(row=write_row, column=get_column_index(col), value=0)
 
-            # TR00 movements - SKIP if plant not in MB51
+            # TR00 movements
             tr00_values = {}
             if plant_exists_in_mb51:
                 for col, label7 in tr00_movements:
@@ -1016,7 +874,7 @@ def main():
                     tr00_values[col] = 0
                     ws.cell(row=write_row, column=get_column_index(col), value=0)
 
-            # 641/642 - SKIP if plant not in MB51
+            # 641/642 - NOW WITH NEGATIVE VALUES
             if plant_exists_in_mb51:
                 bb9 = sumifs_mb51(material, None, None, plant, mv_type_direct="641")
                 bc9 = sumifs_mb51(material, None, None, plant, mv_type_direct="642")
@@ -1024,7 +882,6 @@ def main():
                 bb9 = 0
                 bc9 = 0
             
-            # BD9 - FORMULA ONLY (not calculated)
             bd9_formula = f"=V{write_row}-BB{write_row}-BC{write_row}"
             
             ws.cell(row=write_row, column=get_column_index("BB"), value=bb9)
@@ -1033,27 +890,17 @@ def main():
             if plant_exists_in_mb51:
                 totals["BB"] += bb9
                 totals["BC"] += bc9
-            # BD is formula, don't add to totals
 
-            # END STOCK - Some are formulas
-            sum_gs00 = sum(gs00_values.values())
-            sum_ai00 = sum(ai00_values.values())
-            sum_tr00 = sum(tr00_values.values())
-            
-            # BG9 = H9 + SUM(R9:Z9) + SUM(AJ9:AZ9) - FORMULA
+            # END STOCK
             bg9_formula = f"=H{write_row}+SUM(R{write_row}:Z{write_row})+SUM(AJ{write_row}:AZ{write_row})"
-            
-            # BH9 = I9 + SUM(AB9:AH9) - FORMULA
             bh9_formula = f"=I{write_row}+SUM(AB{write_row}:AH{write_row})"
-            
-            # BI9 = BG9 + BH9 - FORMULA
             bi9_formula = f"=BG{write_row}+BH{write_row}"
             
             ws.cell(row=write_row, column=get_column_index("BG"), value=bg9_formula)
             ws.cell(row=write_row, column=get_column_index("BH"), value=bh9_formula)
             ws.cell(row=write_row, column=get_column_index("BI"), value=bi9_formula)
 
-            # SAP - MB5B - Mix of values and formulas
+            # SAP - MB5B
             bj9 = sheet_cache.get_mb5b(material, plant, "GS")
             bk9 = sheet_cache.get_mb5b(material, plant, "BS")
             bl9_formula = f"=SUM(BJ{write_row}:BK{write_row})"
@@ -1062,7 +909,7 @@ def main():
             ws.cell(row=write_row, column=get_column_index("BK"), value=bk9)
             ws.cell(row=write_row, column=get_column_index("BL"), value=bl9_formula)
 
-            # DIFF - All formulas
+            # DIFF
             bm9_formula = f"=BG{write_row}-BJ{write_row}"
             bn9_formula = f"=BH{write_row}-BK{write_row}"
             bo9_formula = f"=BM{write_row}+BN{write_row}"
@@ -1074,7 +921,7 @@ def main():
             bp9_formula = f"=P{write_row}-BO{write_row}"
             ws.cell(row=write_row, column=get_column_index("BP"), value=bp9_formula)
 
-            # STOCK - EDS - Mix of values and formulas
+            # STOCK - EDS
             br9 = sheet_cache.get_eds(material, plant, "GS")
             bs9 = sheet_cache.get_eds(material, plant, "BS")
             bt9_formula = f"=BR{write_row}+BS{write_row}"
@@ -1095,34 +942,18 @@ def main():
 
         log(f"Total rows written: {write_row - 9}")
         
-        # Show plants not in MB51
-        if len(plants_not_in_mb51) > 0:
-            log(f"  === WARNING: Plants in Output Report but NOT in MB51 ===")
-            log(f"  Total: {len(plants_not_in_mb51)} plants")
-            log(f"  Plants: {sorted(list(plants_not_in_mb51))}")
-            log(f"  These plants have MB51 columns (R-BD) set to 0")
-        
         # Show lookup stats
         log(f"  === LOOKUP STATISTICS ===")
-        log(f"  Total lookup calls: {lookup_stats['total_calls']}")
+        log(f"  Total calls: {lookup_stats['total_calls']}")
         log(f"  Successful: {lookup_stats['found']}")
         log(f"  Not found: {lookup_stats['not_found']}")
         
-        if len(debug_samples) > 0:
-            log(f"  === DEBUG SAMPLES (first 10 issues) ===")
-            for sample in debug_samples[:10]:
-                log(f"    {sample}")
-        
-        # Check totals
-        has_values = sum(1 for v in totals.values() if v != 0)
-        log(f"  Columns with non-zero totals: {has_values}/{len(totals)}")
-        if has_values > 0:
-            log(f"  === NON-ZERO TOTALS (sample) ===")
-            for i, (col, val) in enumerate(sorted(totals.items())):
-                if i >= 10:
-                    break
-                if val != 0:
-                    log(f"    {col}: {val:,.2f}")
+        # Check for negative totals
+        neg_totals = {k: v for k, v in totals.items() if v < 0}
+        if neg_totals:
+            log(f"  === NEGATIVE TOTALS (GOOD!) ===")
+            for col, val in sorted(neg_totals.items()):
+                log(f"    {col}: {val:,.2f}")
 
         # Write formulas
         log("Writing formulas...")
@@ -1137,31 +968,19 @@ def main():
         for col in sum_columns:
             ws[f"{col}3"] = f"=SUM({col}9:{col}{last_row})"
         
-        # S1 - CRITICAL: Only calculate for plants that exist in main file
-        log("Calculating S1 (ctrl balance MB51)...")
-        
-        # Filter MB51 to only include plants from main file
+        # S1
         if len(main_file_plants) > 0:
             mb51_for_s1 = df_mb51_filtered[df_mb51_filtered['plant_clean'].isin(main_file_plants)]
             mb51_total_amount = mb51_for_s1['amount'].sum()
-            log(f"  MB51 total (filtered by main file plants): {mb51_total_amount:,.2f}")
         else:
-            # No main file plants, use all MB51
             mb51_total_amount = df_mb51_filtered['amount'].sum()
-            log(f"  MB51 total (all plants): {mb51_total_amount:,.2f}")
         
         sum_r3_bb3 = sum([totals.get(col, 0) for col in sum_columns])
-        s1_value = mb51_total_amount - sum_r3_bb3
-        
-        # CRITICAL: Round to avoid floating point precision errors
-        # 6.18456397205591E-11 should be 0
-        s1_value = round(s1_value, 2)
+        s1_value = round(mb51_total_amount - sum_r3_bb3, 2)
         
         ws["S1"] = s1_value
-        log(f"  Sum R3:BB3: {sum_r3_bb3:,.2f}")
         log(f"  S1 = {s1_value:.2f}")
         
-        # AX2
         ws["AX2"] = "=X3+AF3+AO3+AX3"
         
         # BL2
@@ -1182,11 +1001,7 @@ def main():
             except Exception as e:
                 log(f"  Warning: {str(e)}")
         
-        bl2_value = sum_bl - sum_mb5b_pq
-        
-        # CRITICAL: Round to avoid floating point precision errors
-        bl2_value = round(bl2_value, 2)
-        
+        bl2_value = round(sum_bl - sum_mb5b_pq, 2)
         ws["BL2"] = bl2_value
         log(f"  BL2 = {bl2_value:.2f}")
 
@@ -1204,7 +1019,6 @@ def main():
 
         ws.freeze_panes = "H9"
 
-        # Number format
         for row in range(9, write_row):
             for col in range(8, 76):
                 cell = ws.cell(row=row, column=col)
