@@ -435,10 +435,20 @@ def main():
         log(f"  === Empty Storage Breakdown ===")
         log(f"  Total empty storage rows: {len(empty_storage_df)}")
         if len(empty_storage_df) > 0:
-            log("  Sample empty storage entries (first 3):")
-            for idx in range(min(3, len(empty_storage_df))):
+            log("  Sample empty storage entries (first 5, including negatives):")
+            for idx in range(min(5, len(empty_storage_df))):
                 row = empty_storage_df.iloc[idx]
                 log(f"    Mat={row['material']}, Plant={row['plant_clean']}, MvType={row['mv_type']}, MvText={row['mv_text'][:30]}, Amt={row['amount']}")
+            
+            # Check for negative amounts
+            neg_empty = empty_storage_df[empty_storage_df['amount'] < 0]
+            if len(neg_empty) > 0:
+                log(f"  WARNING: Found {len(neg_empty)} negative amount rows in empty storage:")
+                for idx in range(min(3, len(neg_empty))):
+                    row = neg_empty.iloc[idx]
+                    log(f"    Mat={row['material']}, MvType={row['mv_type']}, Amt={row['amount']}")
+            else:
+                log(f"  No negative amounts found in empty storage (might be filtered somewhere)")
         
         # CRITICAL: Use plant_clean for grouping!
         grouped_mb51 = df_mb51_filtered.groupby(
@@ -600,7 +610,15 @@ def main():
                     log(f"      Found {len(valid_texts)} mv_text variations from master_movement")
                     for detail in details:
                         log(f"        {detail}")
-                    log(f"      TOTAL: {total}")
+                    log(f"      TOTAL (should include negatives): {total}")
+                    
+                    # Extra check: are there negative values in MB51 for this combo?
+                    check_key = (material, plant, 'EMPTY_STORAGE', mv_type_direct)
+                    check_lookup = {k: v for k, v in mb51_lookup.items() if k[:4] == check_key}
+                    if check_lookup:
+                        log(f"      All values in lookup for this combo:")
+                        for k, v in check_lookup.items():
+                            log(f"        {k} => {v}")
                 
                 if found_any:
                     lookup_stats['found'] += 1
