@@ -17,5 +17,6 @@ route.get('/test', trans.testGetDocument)
 
 // download document
 route.get('/download/document', trans.downloadDocuments)
+route.get('/download/document/debug', trans.downloadDocuments)
 
 module.exports = route

@@ -2823,6 +2823,89 @@ module.exports = {
       return response(res, error.message, {}, 500, false)
     }
   },
+  debugDownload: async (req, res) => {
+    try {
+      const { startDate, endDate, namaFile } = req.query
+      const kode = req.user.kode
+      
+      if (!startDate || !endDate) {
+        return res.status(400).json({
+          success: false,
+          message: 'startDate dan endDate harus diisi'
+        })
+      }
+
+      const start = moment(startDate).utc().startOf('day').format('YYYY-MM-DD HH:mm:ss')
+      const end = moment(endDate).utc().endOf('day').format('YYYY-MM-DD HH:mm:ss')
+
+      let sqlQuery = `
+        SELECT 
+          p.id,
+          p.path,
+          p.dokumen as file_name,
+          p.kode_depo,
+          p.updatedAt,
+          d.nama_dokumen as master_name,
+          d.uploadedBy as tipe,
+          d.jenis_dokumen,
+          d.status_depo
+        FROM Paths p
+        INNER JOIN documents d ON p.dokumen = d.nama_dokumen
+        WHERE 
+          p.kode_depo = :kode
+          AND p.path IS NOT NULL
+          AND p.path != ''
+          AND d.status != 'inactive'
+          AND DATE(p.updatedAt) BETWEEN DATE(:start) AND DATE(:end)
+      `
+
+      const replacements = { kode, start, end }
+      
+      if (namaFile) {
+        sqlQuery += ` AND d.nama_dokumen LIKE :namaFile`
+        replacements.namaFile = `%${namaFile}%`
+      }
+
+      sqlQuery += ` ORDER BY p.updatedAt DESC LIMIT 10`
+
+      const files = await sequelize.query(sqlQuery, {
+        replacements,
+        type: QueryTypes.SELECT
+      })
+
+      // Return debug info
+      return res.json({
+        success: true,
+        debug: {
+          user: {
+            kode: kode,
+            level: req.user.level
+          },
+          query: {
+            startDate,
+            endDate,
+            namaFile,
+            start_formatted: start,
+            end_formatted: end
+          },
+          sql: sqlQuery,
+          replacements: replacements,
+          results: {
+            count: files.length,
+            sample: files.slice(0, 3) // hanya 3 data pertama
+          }
+        }
+      })
+
+    } catch (error) {
+      return res.status(500).json({
+        success: false,
+        message: error.message,
+        stack: error.stack
+      })
+    }
+  },
+
   downloadDocuments: async (req, res) => {
     try {
       const { startDate, endDate, namaFile } = req.query
@@ -2836,9 +2919,9 @@ module.exports = {
         })
       }
 
-      // Setup date range
-      const start = moment(startDate).startOf('day').format('YYYY-MM-DD HH:mm:ss')
-      const end = moment(endDate).endOf('day').format('YYYY-MM-DD HH:mm:ss')
+      // Setup date range - pastikan cover full day di timezone apapun
+      const start = moment(startDate).utc().startOf('day').format('YYYY-MM-DD HH:mm:ss')
+      const end = moment(endDate).utc().endOf('day').format('YYYY-MM-DD HH:mm:ss')
 
       // Build query dengan raw SQL untuk performa maksimal
       // Join berdasarkan nama_dokumen (documents) = dokumen (paths)
@@ -2860,7 +2943,7 @@ module.exports = {
           AND p.path IS NOT NULL
           AND p.path != ''
           AND d.status != 'inactive'
-          AND p.updatedAt BETWEEN :start AND :end
+          AND DATE(p.updatedAt) BETWEEN DATE(:start) AND DATE(:end)
       `
 
       // Add nama file filter if provided
