@@ -2850,7 +2850,7 @@ module.exports = {
           d.nama_dokumen as master_name,
           d.uploadedBy as tipe,
           p.document_id
-        FROM paths p
+        FROM Paths p
         INNER JOIN dokumen d ON p.document_id = d.id
         INNER JOIN depo dp ON d.kode_plant = dp.kode_plant OR d.kode_plant = dp.kode_depo
         WHERE 
