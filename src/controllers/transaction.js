@@ -2868,23 +2868,20 @@ module.exports = {
         type: QueryTypes.SELECT
       })
 
-      // Check file existence with multiple path attempts
+      // Check file existence and generate new names
       const fileCheck = files.slice(0, 5).map(file => {
-        const attempts = [
-          { method: '__dirname + ../', path: path.join(__dirname, '../', file.path) },
-          { method: '__dirname + ../../', path: path.join(__dirname, '../../', file.path) },
-          { method: '__dirname only', path: path.join(__dirname, file.path) },
-          { method: 'process.cwd()', path: path.join(process.cwd(), file.path) },
-          { method: 'path.resolve', path: path.resolve(file.path) }
-        ]
+        const filePath = path.join(__dirname, '../../', file.path)
+        const originalFileName = path.basename(file.path)
+        const sanitizedDokumen = file.dokumen.replace(/[<>:"/\\|?*]/g, '-')
+        const newFileName = `${file.kode_depo}-${sanitizedDokumen}-${originalFileName}`
         
         return {
           ...file,
-          pathAttempts: attempts.map(attempt => ({
-            method: attempt.method,
-            fullPath: attempt.path,
-            exists: fs.existsSync(attempt.path)
-          }))
+          fileExists: fs.existsSync(filePath),
+          fullPath: filePath,
+          originalFileName: originalFileName,
+          newFileName: newFileName,
+          sanitizedDokumen: sanitizedDokumen
         }
       })
 
@@ -2902,7 +2899,7 @@ module.exports = {
           replacements: replacements,
           results: {
             count: files.length,
-            sample: fileCheck.slice(0, 5)
+            sample: fileCheck
           }
         }
       })
@@ -2932,7 +2929,7 @@ module.exports = {
       const start = moment(startDate).format('YYYY-MM-DD')
       const end = moment(endDate).format('YYYY-MM-DD')
 
-      // Query langsung ke Paths tanpa join
+      // Query langsung ke Paths
       let sqlQuery = `
         SELECT 
           id,
@@ -2978,15 +2975,26 @@ module.exports = {
       }
       
       for (const file of files) {
-        const filePath = path.join(__dirname, '../', file.path)
+        const filePath = path.join(__dirname, '../../', file.path)
         
         // Check if file exists
         if (fs.existsSync(filePath)) {
+          // Get original filename
+          const originalFileName = path.basename(file.path)
+          
+          // Sanitize dokumen name (remove invalid chars for filename)
+          const sanitizedDokumen = file.dokumen.replace(/[<>:"/\\|?*]/g, '-')
+          
+          // Create new filename: kode_depo-dokumen-originalname
+          const newFileName = `${file.kode_depo}-${sanitizedDokumen}-${originalFileName}`
+          
           filesToZip.push({
             path: filePath,
-            name: file.path,
+            originalName: file.path,
+            newName: newFileName,
             date: moment(file.updatedAt).format('YYYY-MM-DD'),
-            dokumen: file.dokumen
+            dokumen: sanitizedDokumen,
+            kodeDepo: file.kode_depo
           })
           fileStats.found++
         } else {
@@ -3048,13 +3056,17 @@ module.exports = {
       // Pipe archive to response
       archive.pipe(res)
 
-      // Add files to archive with folder structure: date/dokumen/filename
+      // Add files to archive with renamed filename
       filesToZip.forEach(file => {
         try {
           const folderStructure = `${file.date}/${file.dokumen}`
+          
+          // PENTING: file.newName adalah nama baru yang akan muncul di dalam zip
           archive.file(file.path, { 
-            name: `${folderStructure}/${path.basename(file.name)}` 
+            name: `${folderStructure}/${file.newName}` 
           })
+          
+          console.log(`Added: ${file.newName}`)
           processedFiles++
         } catch (err) {
           console.error(`Error adding file to archive: ${file.path}`, err)
