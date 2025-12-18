@@ -125,7 +125,7 @@ const buildHeader = (dokumenNames) => {
 // }
 
 module.exports = {
-  getDashboard: async (req, res) => {
+  getDashboardOld: async (req, res) => {
     try {
       let { limit, page, search, sort, typeSort, time, tipe, find } = req.query
       let searchValue = ''
@@ -915,6 +915,407 @@ module.exports = {
         }
       }
     } catch (error) {
+      return response(res, error.message, {}, 500, false)
+    }
+  },
+  getDashboard: async (req, res) => {
+    try {
+      // Extract and normalize query parameters
+      const extractParam = (param) => {
+        if (typeof param === 'object') return Object.values(param)[0]
+        return param || ''
+      }
+
+      const {
+        limit = 10,
+        page = 1,
+        search = '',
+        sort = 'id',
+        typeSort = 'DESC',
+        time = '',
+        tipe = 'daily',
+        find = ''
+      } = {
+        limit: parseInt(req.query.limit) || 10,
+        page: parseInt(req.query.page) || 1,
+        search: extractParam(req.query.search),
+        sort: extractParam(req.query.sort) || 'id',
+        typeSort: extractParam(req.query.typeSort) || 'DESC',
+        time: extractParam(req.query.time),
+        tipe: extractParam(req.query.tipe) || 'daily',
+        find: extractParam(req.query.find)
+      }
+
+      const { level, kode, name } = req.user
+      const offset = (page - 1) * limit
+
+      // Calculate time ranges
+      const getTimeRange = (timeValue, tipeValue) => {
+        if (tipeValue === 'monthly') {
+          return {
+            start: timeValue 
+              ? moment(timeValue).startOf('month').format('YYYY-MM-DD')
+              : moment().startOf('month').format('YYYY-MM-DD'),
+            end: timeValue
+              ? moment(timeValue).endOf('month').format('YYYY-MM-DD')
+              : moment().endOf('month').format('YYYY-MM-DD')
+          }
+        }
+        return {
+          start: timeValue
+            ? moment(timeValue).startOf('day').format('YYYY-MM-DD')
+            : moment().startOf('day').format('YYYY-MM-DD'),
+          end: timeValue
+            ? moment(timeValue).add(1, 'days').startOf('day').format('YYYY-MM-DD')
+            : moment().add(1, 'days').startOf('day').format('YYYY-MM-DD')
+        }
+      }
+
+      const timeRange = getTimeRange(time, tipe)
+
+      // Handle level 4 and 5 (SA and Kasir)
+      if (level === 4 || level === 5) {
+        const userType = level === 4 ? 'sa' : 'kasir'
+        
+        // Get depo info
+        const depoQuery = `
+          SELECT status_depo, kode_plant 
+          FROM depos
+          WHERE kode_plant = ? OR kode_depo = ?
+          LIMIT 1
+        `
+        const [depoResult] = await sequelize.query(depoQuery, {
+          replacements: [kode, kode],
+          type: QueryTypes.SELECT
+        })
+
+        if (!depoResult) {
+          return response(res, 'user tidak terhubung dengan depo manapun', {}, 404, false)
+        }
+
+        // Get documents with proper limit for level 4
+        const documentLimit = level === 4 ? 100 : limit
+        const documentOffset = level === 4 ? (page - 1) * 100 : offset
+        
+        const documentsQuery = `
+          SELECT * FROM documents
+          WHERE nama_dokumen LIKE ?
+            AND (access LIKE ? OR access IS NULL)
+            AND status_depo = ?
+            AND uploadedBy = ?
+            AND jenis_dokumen LIKE ?
+            AND status != 'inactive'
+          ORDER BY ${sort} ${typeSort}
+          LIMIT ? OFFSET ?
+        `
+        const documents = await sequelize.query(documentsQuery, {
+          replacements: [
+            `%${search}%`,
+            `%${kode}%`,
+            depoResult.status_depo,
+            userType,
+            `%${tipe}%`,
+            documentLimit,
+            documentOffset
+          ],
+          type: QueryTypes.SELECT
+        })
+
+        // Count total documents
+        const countQuery = `
+          SELECT COUNT(*) as total FROM documents
+          WHERE nama_dokumen LIKE ?
+            AND (access LIKE ? OR access IS NULL)
+            AND status_depo = ?
+            AND uploadedBy = ?
+            AND jenis_dokumen LIKE ?
+            AND status != 'inactive'
+        `
+        const [countResult] = await sequelize.query(countQuery, {
+          replacements: [
+            `%${search}%`,
+            `%${kode}%`,
+            depoResult.status_depo,
+            userType,
+            `%${tipe}%`
+          ],
+          type: QueryTypes.SELECT
+        })
+
+        const results = {
+          rows: documents,
+          count: countResult.total
+        }
+
+        const pageInfo = pagination('/dokumen/get', req.query, page, limit, results.count)
+
+        // Get or create activity
+        const activityQuery = `
+          SELECT * FROM activities
+          WHERE kode_plant = ?
+            AND tipe = ?
+            AND jenis_dokumen = ?
+            AND createdAt > ?
+            AND createdAt < ?
+        `
+        let cek = await sequelize.query(activityQuery, {
+          replacements: [kode, userType, tipe, timeRange.start, timeRange.end],
+          type: QueryTypes.SELECT
+        })
+
+        if (cek.length === 0) {
+          // Lock previous activities if daily
+          if (tipe === 'daily') {
+            const monthStart = moment().startOf('month').format('YYYY-MM-DD')
+            const monthEnd = moment().add(1, 'month').startOf('month').format('YYYY-MM-DD')
+            
+            await sequelize.query(`
+              UPDATE activities 
+              SET access = 'lock'
+              WHERE kode_plant = ?
+                AND tipe = ?
+                AND jenis_dokumen = ?
+                AND createdAt > ?
+                AND createdAt < ?
+            `, {
+              replacements: [kode, userType, tipe, monthStart, monthEnd]
+            })
+          }
+
+          // Create new activity
+          const insertQuery = `
+            INSERT INTO activities (kode_plant, status, documentDate, access, jenis_dokumen, tipe, createdAt, updatedAt)
+            VALUES (?, 'Belum Upload', ?, 'unlock', ?, ?, NOW(), NOW())
+          `
+          await sequelize.query(insertQuery, {
+            replacements: [
+              kode,
+              moment().subtract(1, 'days').format('YYYY-MM-DD'),
+              tipe,
+              userType
+            ]
+          })
+
+          // Refresh cek
+          cek = await sequelize.query(activityQuery, {
+            replacements: [kode, userType, tipe, timeRange.start, timeRange.end],
+            type: QueryTypes.SELECT
+          })
+        }
+
+        return response(res, 'list dokumen', { results, pageInfo, cek })
+      }
+
+      // Handle level 1, 2, 3 (Admin, Supervisor, PIC)
+      if (level >= 1 && level <= 3) {
+        // Get PICs based on level
+        let picQuery = ''
+        let picReplacements = []
+
+        if (level === 3) {
+          picQuery = `
+            SELECT p.*, d.* 
+            FROM pics p
+            INNER JOIN depos d ON p.kode_depo = d.kode_depo
+            WHERE p.pic = ?
+              AND (d.kode_plant LIKE ? OR d.nama_depo LIKE ? OR d.home_town LIKE ?)
+            LIMIT ? OFFSET ?
+          `
+          picReplacements = [name, `%${find}%`, `%${find}%`, `%${find}%`, limit, offset]
+        } else if (level === 2) {
+          picQuery = `
+            SELECT p.*, d.* 
+            FROM pics p
+            INNER JOIN depos d ON p.kode_depo = d.kode_depo
+            WHERE p.spv = ?
+              AND (d.kode_plant LIKE ? OR d.nama_depo LIKE ? OR d.home_town LIKE ?)
+            LIMIT ? OFFSET ?
+          `
+          picReplacements = [name, `%${find}%`, `%${find}%`, `%${find}%`, limit, offset]
+        } else { // level 1
+          picQuery = `
+            SELECT p.*, d.* 
+            FROM pics p
+            INNER JOIN depos d ON p.kode_depo = d.kode_depo
+            WHERE (d.kode_plant LIKE ? OR d.nama_depo LIKE ? OR d.home_town LIKE ?)
+            LIMIT ? OFFSET ?
+          `
+          picReplacements = [`%${find}%`, `%${find}%`, `%${find}%`, limit, offset]
+        }
+
+        const picResults = await sequelize.query(picQuery, {
+          replacements: picReplacements,
+          type: QueryTypes.SELECT
+        })
+
+        // Count total PICs
+        const countPicQuery = picQuery.replace(/SELECT p\.\*, d\.\*/, 'SELECT COUNT(*) as total').replace(/LIMIT \? OFFSET \?/, '')
+        const [countPicResult] = await sequelize.query(countPicQuery, {
+          replacements: picReplacements.slice(0, -2),
+          type: QueryTypes.SELECT
+        })
+
+        const results = {
+          rows: picResults,
+          count: countPicResult.total
+        }
+
+        const pageInfo = pagination('/dashboard/get', req.query, page, limit, results.count)
+
+        if (!picResults.length) {
+          return response(res, 'depo no found', {}, 404, false)
+        }
+
+        // Get unique kode_depo
+        const kodeDepos = [...new Set(picResults.map(x => x.kode_depo))]
+
+        // Fetch SA and Kasir data in parallel
+        const fetchActivityData = async (userType) => {
+          const results = []
+          
+          for (const kodeDepo of kodeDepos) {
+            // Get depo with single activity (limit 1)
+            const depoQuery = `
+              SELECT 
+                d.kode_depo,
+                d.nama_depo,
+                d.home_town,
+                d.channel,
+                d.distribution,
+                d.status_depo,
+                d.profit_center,
+                d.kode_plant,
+                d.nama_grom,
+                d.nama_bm,
+                d.nama_ass
+              FROM depos d
+              WHERE d.kode_plant = ?
+              LIMIT 1
+            `
+            
+            const [depoData] = await sequelize.query(depoQuery, {
+              replacements: [kodeDepo],
+              type: QueryTypes.SELECT
+            })
+
+            if (!depoData) continue
+
+            // Get activity for this depo
+            const activityQuery = `
+              SELECT 
+                a.id,
+                a.kode_plant,
+                a.progress,
+                a.documentDate,
+                a.status,
+                a.access,
+                a.jenis_dokumen,
+                a.tipe,
+                a.createdAt,
+                a.updatedAt
+              FROM activities a
+              WHERE a.kode_plant = ?
+                AND a.tipe = ?
+                AND a.jenis_dokumen = ?
+                AND a.createdAt > ?
+                AND a.createdAt < ?
+              ORDER BY a.createdAt DESC
+              LIMIT 1
+            `
+            
+            const [activityData] = await sequelize.query(activityQuery, {
+              replacements: [
+                kodeDepo,
+                userType,
+                tipe,
+                timeRange.start,
+                timeRange.end
+              ],
+              type: QueryTypes.SELECT
+            })
+
+            if (!activityData) continue
+
+            // Get paths (documents) for this activity with limit 50
+            const pathsQuery = `
+              SELECT 
+                p.id,
+                p.dokumen,
+                p.activityId,
+                p.kode_depo,
+                p.alasan,
+                p.status_dokumen,
+                p.path,
+                p.createdAt,
+                p.updatedAt
+              FROM Paths p
+              WHERE p.activityId = ?
+              LIMIT 50
+            `
+            
+            const pathsData = await sequelize.query(pathsQuery, {
+              replacements: [activityData.id],
+              type: QueryTypes.SELECT
+            })
+
+            // Get documents for this depo
+            const documentsQuery = `
+              SELECT 
+                doc.id,
+                doc.nama_dokumen,
+                doc.jenis_dokumen,
+                doc.postDokumen,
+                doc.divisi,
+                doc.status_depo,
+                doc.uploadedBy,
+                doc.status,
+                doc.access
+              FROM documents doc
+              WHERE doc.status_depo = ?
+                AND doc.nama_dokumen LIKE ?
+                AND doc.jenis_dokumen = ?
+                AND doc.uploadedBy = ?
+                AND doc.status != 'inactive'
+            `
+            
+            const documentsData = await sequelize.query(documentsQuery, {
+              replacements: [
+                depoData.status_depo,
+                `%${search}%`,
+                tipe,
+                userType
+              ],
+              type: QueryTypes.SELECT
+            })
+
+            // Combine all data in structure similar to Sequelize include
+            const combinedData = {
+              ...depoData,
+              active: [{
+                ...activityData,
+                doc: pathsData
+              }],
+              dokumen: documentsData
+            }
+
+            results.push(combinedData)
+          }
+          
+          return results
+        }
+
+        const [sa, kasir] = await Promise.all([
+          fetchActivityData('sa'),
+          fetchActivityData('kasir')
+        ])
+
+        const all = [...sa, ...kasir].filter(x => x !== null && x !== undefined)
+
+        return response(res, 'list dokumen', { results, sa, kasir, all, pageInfo })
+      }
+
+    } catch (error) {
+      console.error('Dashboard error:', error)
       return response(res, error.message, {}, 500, false)
     }
   },
