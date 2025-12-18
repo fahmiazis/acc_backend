@@ -2835,52 +2835,49 @@ module.exports = {
         })
       }
 
-      const start = moment(startDate).utc().startOf('day').format('YYYY-MM-DD HH:mm:ss')
-      const end = moment(endDate).utc().endOf('day').format('YYYY-MM-DD HH:mm:ss')
+      const start = moment(startDate).format('YYYY-MM-DD')
+      const end = moment(endDate).format('YYYY-MM-DD')
 
       let sqlQuery = `
         SELECT 
-          p.id,
-          p.path,
-          p.dokumen as file_name,
-          p.kode_depo,
-          p.updatedAt,
-          d.nama_dokumen as master_name,
-          d.uploadedBy as tipe,
-          d.jenis_dokumen,
-          d.status_depo
-        FROM Paths p
-        INNER JOIN documents d ON p.dokumen = d.nama_dokumen
+          id,
+          path,
+          dokumen,
+          kode_depo,
+          activityId,
+          status_dokumen,
+          updatedAt,
+          createdAt
+        FROM Paths
         WHERE 
-          p.kode_depo = :kode
-          AND p.path IS NOT NULL
-          AND p.path != ''
-          AND d.status != 'inactive'
-          AND DATE(p.updatedAt) BETWEEN DATE(:start) AND DATE(:end)
+          path IS NOT NULL
+          AND path != ''
+          AND DATE(updatedAt) BETWEEN :start AND :end
       `
 
-      const replacements = { kode, start, end }
+      const replacements = { start, end }
       
       if (namaFile) {
-        sqlQuery += ` AND d.nama_dokumen LIKE :namaFile`
+        sqlQuery += ` AND dokumen LIKE :namaFile`
         replacements.namaFile = `%${namaFile}%`
       }
 
-      sqlQuery += ` ORDER BY p.updatedAt DESC LIMIT 10`
+      sqlQuery += ` ORDER BY updatedAt DESC LIMIT 10`
 
       const files = await sequelize.query(sqlQuery, {
         replacements,
         type: QueryTypes.SELECT
       })
 
-      // Return debug info
+      // Check file existence
+      const fileCheck = files.map(file => ({
+        ...file,
+        fileExists: fs.existsSync(path.join(__dirname, '../assets/documents', file.path))
+      }))
+
       return res.json({
         success: true,
         debug: {
-          user: {
-            kode: kode,
-            level: req.user.level
-          },
           query: {
             startDate,
             endDate,
@@ -2892,7 +2889,7 @@ module.exports = {
           replacements: replacements,
           results: {
             count: files.length,
-            sample: files.slice(0, 3) // hanya 3 data pertama
+            sample: fileCheck.slice(0, 5)
           }
         }
       })
@@ -2919,42 +2916,33 @@ module.exports = {
         })
       }
 
-      // Setup date range - pastikan cover full day di timezone apapun
-      const start = moment(startDate).utc().startOf('day').format('YYYY-MM-DD HH:mm:ss')
-      const end = moment(endDate).utc().endOf('day').format('YYYY-MM-DD HH:mm:ss')
+      // Setup date range
+      const start = moment(startDate).format('YYYY-MM-DD')
+      const end = moment(endDate).format('YYYY-MM-DD')
 
-      // Build query dengan raw SQL untuk performa maksimal
-      // Join berdasarkan nama_dokumen (documents) = dokumen (paths)
+      // Query langsung ke Paths tanpa join
       let sqlQuery = `
         SELECT 
-          p.id,
-          p.path,
-          p.dokumen as file_name,
-          p.kode_depo,
-          p.updatedAt,
-          d.nama_dokumen as master_name,
-          d.uploadedBy as tipe,
-          d.jenis_dokumen,
-          d.status_depo
-        FROM Paths p
-        INNER JOIN documents d ON p.dokumen = d.nama_dokumen
+          id,
+          path,
+          dokumen,
+          kode_depo,
+          updatedAt
+        FROM Paths
         WHERE 
-          p.kode_depo = :kode
-          AND p.path IS NOT NULL
-          AND p.path != ''
-          AND d.status != 'inactive'
-          AND DATE(p.updatedAt) BETWEEN DATE(:start) AND DATE(:end)
+          path IS NOT NULL
+          AND path != ''
+          AND DATE(updatedAt) BETWEEN :start AND :end
       `
 
-      // Add nama file filter if provided
-      const replacements = { kode, start, end }
+      const replacements = { start, end }
       
       if (namaFile) {
-        sqlQuery += ` AND d.nama_dokumen LIKE :namaFile`
+        sqlQuery += ` AND dokumen LIKE :namaFile`
         replacements.namaFile = `%${namaFile}%`
       }
 
-      sqlQuery += ` ORDER BY p.updatedAt DESC`
+      sqlQuery += ` ORDER BY updatedAt DESC`
 
       // Execute raw query
       const files = await sequelize.query(sqlQuery, {
@@ -2972,11 +2960,9 @@ module.exports = {
       // Collect and validate file paths
       const filesToZip = []
       const fileStats = {
-        sa: 0,
-        kasir: 0,
-        daily: 0,
-        monthly: 0,
-        total: 0
+        found: 0,
+        notFound: 0,
+        total: files.length
       }
       
       for (const file of files) {
@@ -2988,32 +2974,24 @@ module.exports = {
             path: filePath,
             name: file.path,
             date: moment(file.updatedAt).format('YYYY-MM-DD'),
-            tipe: file.tipe || 'unknown',
-            masterName: file.master_name,
-            jenisDokumen: file.jenis_dokumen
+            dokumen: file.dokumen
           })
-          
-          // Count by type
-          if (file.tipe === 'sa') fileStats.sa++
-          if (file.tipe === 'kasir') fileStats.kasir++
-          if (file.jenis_dokumen === 'daily') fileStats.daily++
-          if (file.jenis_dokumen === 'monthly') fileStats.monthly++
-          
-          fileStats.total++
+          fileStats.found++
         } else {
           console.warn(`File not found: ${filePath}`)
+          fileStats.notFound++
         }
       }
 
       if (filesToZip.length === 0) {
         return res.status(404).json({
           success: false,
-          message: 'File ditemukan di database tetapi tidak ada di storage'
+          message: `File ditemukan di database (${files.length}) tetapi tidak ada di storage`
         })
       }
 
       // Create zip filename
-      const zipFileName = `documents_${kode}_${moment(startDate).format('YYYYMMDD')}_${moment(endDate).format('YYYYMMDD')}_${Date.now()}.zip`
+      const zipFileName = `documents_${moment(startDate).format('YYYYMMDD')}_${moment(endDate).format('YYYYMMDD')}_${Date.now()}.zip`
 
       // Set headers for download
       res.setHeader('Content-Type', 'application/zip')
@@ -3039,20 +3017,24 @@ module.exports = {
       })
 
       // Log progress
+      let processedFiles = 0
       archive.on('progress', (progress) => {
-        console.log(`Zipping: ${progress.entries.processed}/${progress.entries.total} files`)
+        if (progress.entries.processed % 10 === 0 || progress.entries.processed === progress.entries.total) {
+          console.log(`Zipping: ${progress.entries.processed}/${progress.entries.total} files`)
+        }
       })
 
       // Pipe archive to response
       archive.pipe(res)
 
-      // Add files to archive with folder structure: date/tipe/jenisDokumen/filename
+      // Add files to archive with folder structure: date/dokumen/filename
       filesToZip.forEach(file => {
         try {
-          const folderStructure = `${file.date}/${file.tipe}/${file.jenisDokumen}`
+          const folderStructure = `${file.date}/${file.dokumen}`
           archive.file(file.path, { 
             name: `${folderStructure}/${path.basename(file.name)}` 
           })
+          processedFiles++
         } catch (err) {
           console.error(`Error adding file to archive: ${file.path}`, err)
         }
@@ -3061,10 +3043,12 @@ module.exports = {
       // Finalize the archive (this triggers the streaming)
       await archive.finalize()
 
-      console.log(`✓ ZIP streamed successfully: ${archive.pointer()} bytes`)
-      console.log(`  Total files: ${filesToZip.length}`)
-      console.log(`  - SA: ${fileStats.sa} | Kasir: ${fileStats.kasir}`)
-      console.log(`  - Daily: ${fileStats.daily} | Monthly: ${fileStats.monthly}`)
+      console.log(`✓ ZIP streamed successfully`)
+      console.log(`  - Total in DB: ${fileStats.total}`)
+      console.log(`  - Found: ${fileStats.found}`)
+      console.log(`  - Not Found: ${fileStats.notFound}`)
+      console.log(`  - Zipped: ${processedFiles}`)
+      console.log(`  - Size: ${archive.pointer()} bytes`)
 
     } catch (error) {
       console.error('Download error:', error)
