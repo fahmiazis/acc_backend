@@ -2841,20 +2841,22 @@ module.exports = {
       const end = moment(endDate).endOf('day').format('YYYY-MM-DD HH:mm:ss')
 
       // Build query dengan raw SQL untuk performa maksimal
+      // Join berdasarkan nama_dokumen (documents) = dokumen (paths)
       let sqlQuery = `
         SELECT 
           p.id,
           p.path,
-          p.nama_dokumen as file_name,
+          p.dokumen as file_name,
+          p.kode_depo,
           p.updatedAt,
           d.nama_dokumen as master_name,
           d.uploadedBy as tipe,
-          p.document_id
+          d.jenis_dokumen,
+          d.status_depo
         FROM Paths p
-        INNER JOIN dokumen d ON p.document_id = d.id
-        INNER JOIN depo dp ON d.kode_plant = dp.kode_plant OR d.kode_plant = dp.kode_depo
+        INNER JOIN documents d ON p.dokumen = d.nama_dokumen
         WHERE 
-          (dp.kode_plant = :kode OR dp.kode_depo = :kode)
+          p.kode_depo = :kode
           AND p.path IS NOT NULL
           AND p.path != ''
           AND d.status != 'inactive'
@@ -2889,6 +2891,8 @@ module.exports = {
       const fileStats = {
         sa: 0,
         kasir: 0,
+        daily: 0,
+        monthly: 0,
         total: 0
       }
       
@@ -2902,15 +2906,16 @@ module.exports = {
             name: file.path,
             date: moment(file.updatedAt).format('YYYY-MM-DD'),
             tipe: file.tipe || 'unknown',
-            masterName: file.master_name
+            masterName: file.master_name,
+            jenisDokumen: file.jenis_dokumen
           })
           
           // Count by type
-          if (file.tipe === 'sa') {
-            fileStats.sa++
-          } else if (file.tipe === 'kasir') {
-            fileStats.kasir++
-          }
+          if (file.tipe === 'sa') fileStats.sa++
+          if (file.tipe === 'kasir') fileStats.kasir++
+          if (file.jenis_dokumen === 'daily') fileStats.daily++
+          if (file.jenis_dokumen === 'monthly') fileStats.monthly++
+          
           fileStats.total++
         } else {
           console.warn(`File not found: ${filePath}`)
@@ -2935,7 +2940,7 @@ module.exports = {
 
       // Create archive and pipe directly to response
       const archive = archiver('zip', {
-        zlib: { level: 6 } // Balance between speed and compression (6 is good balance)
+        zlib: { level: 6 } // Balance between speed and compression
       })
 
       // Handle archive errors
@@ -2958,11 +2963,12 @@ module.exports = {
       // Pipe archive to response
       archive.pipe(res)
 
-      // Add files to archive with folder structure by date and type
+      // Add files to archive with folder structure: date/tipe/jenisDokumen/filename
       filesToZip.forEach(file => {
         try {
+          const folderStructure = `${file.date}/${file.tipe}/${file.jenisDokumen}`
           archive.file(file.path, { 
-            name: `${file.date}/${file.tipe}/${path.basename(file.name)}` 
+            name: `${folderStructure}/${path.basename(file.name)}` 
           })
         } catch (err) {
           console.error(`Error adding file to archive: ${file.path}`, err)
@@ -2972,9 +2978,10 @@ module.exports = {
       // Finalize the archive (this triggers the streaming)
       await archive.finalize()
 
-      console.log(`✓ ZIP streamed successfully: ${archive.pointer()} bytes, ${filesToZip.length} files`)
-      console.log(`  - SA files: ${fileStats.sa}`)
-      console.log(`  - Kasir files: ${fileStats.kasir}`)
+      console.log(`✓ ZIP streamed successfully: ${archive.pointer()} bytes`)
+      console.log(`  Total files: ${filesToZip.length}`)
+      console.log(`  - SA: ${fileStats.sa} | Kasir: ${fileStats.kasir}`)
+      console.log(`  - Daily: ${fileStats.daily} | Monthly: ${fileStats.monthly}`)
 
     } catch (error) {
       console.error('Download error:', error)
