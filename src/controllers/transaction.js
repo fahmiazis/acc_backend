@@ -2826,7 +2826,6 @@ module.exports = {
   debugDownload: async (req, res) => {
     try {
       const { startDate, endDate, namaFile } = req.query
-      const kode = req.user.kode
       
       if (!startDate || !endDate) {
         return res.status(400).json({
@@ -2920,7 +2919,6 @@ module.exports = {
   downloadDocuments: async (req, res) => {
     try {
       const { startDate, endDate, namaFile } = req.query
-      const kode = req.user.kode
       
       // Validasi input
       if (!startDate || !endDate) {
@@ -2980,7 +2978,7 @@ module.exports = {
       }
       
       for (const file of files) {
-        const filePath = path.join(__dirname, '../../', file.path)
+        const filePath = path.join(__dirname, '../', file.path)
         
         // Check if file exists
         if (fs.existsSync(filePath)) {
