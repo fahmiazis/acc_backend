@@ -2872,7 +2872,7 @@ module.exports = {
       // Check file existence
       const fileCheck = files.map(file => ({
         ...file,
-        fileExists: fs.existsSync(path.join(__dirname, '../assets/documents', file.path))
+        fileExists: fs.existsSync(path.join(__dirname, '../', file.path))
       }))
 
       return res.json({
@@ -2966,7 +2966,7 @@ module.exports = {
       }
       
       for (const file of files) {
-        const filePath = path.join(__dirname, '../assets/documents', file.path)
+        const filePath = path.join(__dirname, '../', file.path)
         
         // Check if file exists
         if (fs.existsSync(filePath)) {
