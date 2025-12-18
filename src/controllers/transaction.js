@@ -1,6 +1,6 @@
 const { pagination } = require('../helpers/pagination')
 const { documents, Path, depo, activity, pic, email, notif, date_clossing, sequelize } = require('../models') // eslint-disable-line
-const { Op } = require('sequelize')
+const { Op, QueryTypes } = require('sequelize')
 const response = require('../helpers/response')
 const joi = require('joi')
 const uploadHelper = require('../helpers/upload')
@@ -12,6 +12,8 @@ const fs = require('fs')
 const moment = require('moment')
 // const xlsx = require('xlsx')
 const wrapMail = require('../helpers/wrapMail')
+const archiver = require('archiver')
+const path = require('path')
 // const { fn, col } = require('sequelize')
 
 // const buildFilter = async (level, results, depoKode, names) => {
@@ -2819,6 +2821,171 @@ module.exports = {
       }
     } catch (error) {
       return response(res, error.message, {}, 500, false)
+    }
+  },
+  downloadDocuments: async (req, res) => {
+    try {
+      const { startDate, endDate, namaFile } = req.query
+      const kode = req.user.kode
+      
+      // Validasi input
+      if (!startDate || !endDate) {
+        return res.status(400).json({
+          success: false,
+          message: 'startDate dan endDate harus diisi'
+        })
+      }
+
+      // Setup date range
+      const start = moment(startDate).startOf('day').format('YYYY-MM-DD HH:mm:ss')
+      const end = moment(endDate).endOf('day').format('YYYY-MM-DD HH:mm:ss')
+
+      // Build query dengan raw SQL untuk performa maksimal
+      let sqlQuery = `
+        SELECT 
+          p.id,
+          p.path,
+          p.nama_dokumen as file_name,
+          p.updatedAt,
+          d.nama_dokumen as master_name,
+          d.uploadedBy as tipe,
+          p.document_id
+        FROM path p
+        INNER JOIN dokumen d ON p.document_id = d.id
+        INNER JOIN depo dp ON d.kode_plant = dp.kode_plant OR d.kode_plant = dp.kode_depo
+        WHERE 
+          (dp.kode_plant = :kode OR dp.kode_depo = :kode)
+          AND p.path IS NOT NULL
+          AND p.path != ''
+          AND d.status != 'inactive'
+          AND p.updatedAt BETWEEN :start AND :end
+      `
+
+      // Add nama file filter if provided
+      const replacements = { kode, start, end }
+      
+      if (namaFile) {
+        sqlQuery += ` AND d.nama_dokumen LIKE :namaFile`
+        replacements.namaFile = `%${namaFile}%`
+      }
+
+      sqlQuery += ` ORDER BY p.updatedAt DESC`
+
+      // Execute raw query
+      const files = await sequelize.query(sqlQuery, {
+        replacements,
+        type: QueryTypes.SELECT
+      })
+
+      if (files.length === 0) {
+        return res.status(404).json({
+          success: false,
+          message: 'Tidak ada file yang ditemukan pada periode tersebut'
+        })
+      }
+
+      // Collect and validate file paths
+      const filesToZip = []
+      const fileStats = {
+        sa: 0,
+        kasir: 0,
+        total: 0
+      }
+      
+      for (const file of files) {
+        const filePath = path.join(__dirname, '../assets/documents', file.path)
+        
+        // Check if file exists
+        if (fs.existsSync(filePath)) {
+          filesToZip.push({
+            path: filePath,
+            name: file.path,
+            date: moment(file.updatedAt).format('YYYY-MM-DD'),
+            tipe: file.tipe || 'unknown',
+            masterName: file.master_name
+          })
+          
+          // Count by type
+          if (file.tipe === 'sa') {
+            fileStats.sa++
+          } else if (file.tipe === 'kasir') {
+            fileStats.kasir++
+          }
+          fileStats.total++
+        } else {
+          console.warn(`File not found: ${filePath}`)
+        }
+      }
+
+      if (filesToZip.length === 0) {
+        return res.status(404).json({
+          success: false,
+          message: 'File ditemukan di database tetapi tidak ada di storage'
+        })
+      }
+
+      // Create zip filename
+      const zipFileName = `documents_${kode}_${moment(startDate).format('YYYYMMDD')}_${moment(endDate).format('YYYYMMDD')}_${Date.now()}.zip`
+
+      // Set headers for download
+      res.setHeader('Content-Type', 'application/zip')
+      res.setHeader('Content-Disposition', `attachment; filename="${zipFileName}"`)
+      res.setHeader('Content-Description', 'File Transfer')
+      res.setHeader('Cache-Control', 'no-cache')
+
+      // Create archive and pipe directly to response
+      const archive = archiver('zip', {
+        zlib: { level: 6 } // Balance between speed and compression (6 is good balance)
+      })
+
+      // Handle archive errors
+      archive.on('error', (err) => {
+        console.error('Archive error:', err)
+        if (!res.headersSent) {
+          return res.status(500).json({
+            success: false,
+            message: 'Error saat membuat zip file',
+            error: err.message
+          })
+        }
+      })
+
+      // Log progress
+      archive.on('progress', (progress) => {
+        console.log(`Zipping: ${progress.entries.processed}/${progress.entries.total} files`)
+      })
+
+      // Pipe archive to response
+      archive.pipe(res)
+
+      // Add files to archive with folder structure by date and type
+      filesToZip.forEach(file => {
+        try {
+          archive.file(file.path, { 
+            name: `${file.date}/${file.tipe}/${path.basename(file.name)}` 
+          })
+        } catch (err) {
+          console.error(`Error adding file to archive: ${file.path}`, err)
+        }
+      })
+
+      // Finalize the archive (this triggers the streaming)
+      await archive.finalize()
+
+      console.log(`✓ ZIP streamed successfully: ${archive.pointer()} bytes, ${filesToZip.length} files`)
+      console.log(`  - SA files: ${fileStats.sa}`)
+      console.log(`  - Kasir files: ${fileStats.kasir}`)
+
+    } catch (error) {
+      console.error('Download error:', error)
+      
+      if (!res.headersSent) {
+        return res.status(500).json({
+          success: false,
+          message: 'Terjadi kesalahan saat memproses download',
+          error: error.message
+        })
+      }
     }
   }
 }

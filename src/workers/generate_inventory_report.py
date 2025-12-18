@@ -199,14 +199,50 @@ def main():
         log(f"  Movement reference: {len(movement_reference)} (storage+grouping) combinations")
         
         # Build lookup by mv_type only (for BB & BC)
-        movement_by_type = defaultdict(list)
+        # CRITICAL: Also track IN/OUT direction from master_movement
+        movement_by_type = defaultdict(set)  # Use SET to avoid duplicates!
+        movement_direction = {}
+        
         for _, row in df_master_mov.iterrows():
             if pd.notna(row['mv_type']) and row['mv_type']:
+                mv_type = row['mv_type']
                 mv_text = row['mv_text']
-                if mv_text not in movement_by_type[row['mv_type']]:
-                    movement_by_type[row['mv_type']].append(mv_text)
+                
+                # Use set to automatically deduplicate
+                movement_by_type[mv_type].add(mv_text)
+                
+                # Determine direction
+                if mv_type not in movement_direction:
+                    grouping = str(row.get('mv_grouping', '')).lower()
+                    if any(x in grouping for x in ['terima', 'retur jual', 'masuk']):
+                        movement_direction[mv_type] = 'IN'
+                    elif any(x in grouping for x in ['penjualan', 'retur beli', 'keluar', 'pemusnahan']):
+                        movement_direction[mv_type] = 'OUT'
+                    else:
+                        try:
+                            type_num = int(mv_type)
+                            first_digit = type_num // 100
+                            if first_digit in [1, 3, 5]:
+                                movement_direction[mv_type] = 'IN'
+                            else:
+                                movement_direction[mv_type] = 'OUT'
+                        except:
+                            movement_direction[mv_type] = 'IN'
+        
+        # Convert sets back to lists
+        movement_by_type = {k: list(v) for k, v in movement_by_type.items()}
         
         log(f"  Movement by type: {len(movement_by_type)} unique mv_types")
+        
+        # Debug: Show counts for 641/642
+        if '641' in movement_by_type:
+            log(f"  Movement 641: {len(movement_by_type['641'])} unique mv_text (after dedup)")
+            log(f"    Direction: {movement_direction.get('641', 'UNKNOWN')}")
+            log(f"    mv_text values: {movement_by_type['641']}")  # SHOW THE ACTUAL TEXT
+        if '642' in movement_by_type:
+            log(f"  Movement 642: {len(movement_by_type['642'])} unique mv_text (after dedup)")
+            log(f"    Direction: {movement_direction.get('642', 'UNKNOWN')}")
+            log(f"    mv_text values: {movement_by_type['642']}")
 
         # Read MB51
         log(f"Reading MB51...")
@@ -271,17 +307,29 @@ def main():
             df_mb51["posting_date"] = pd.NaT
         
         # FIX: Don't use fillna(0) - keep NaN as NaN, don't convert negatives to 0
+        # CRITICAL: Check if negative values are REALLY negative (not string "-2100")
         df_mb51["amount"] = pd.to_numeric(df_mb51["amount"], errors="coerce")
         
-        # Debug: Check for negative values BEFORE any filtering
+        # Debug: Check data type and negative values BEFORE any filtering
+        log(f"  Amount column dtype: {df_mb51['amount'].dtype}")
+        
         neg_count = (df_mb51["amount"] < 0).sum()
         pos_count = (df_mb51["amount"] > 0).sum()
         zero_count = (df_mb51["amount"] == 0).sum()
         nan_count = df_mb51["amount"].isna().sum()
         total_amount = df_mb51["amount"].sum()
+        
         log(f"  === AMOUNT DISTRIBUTION (RAW MB51) ===")
         log(f"  Positive: {pos_count}, Negative: {neg_count}, Zero: {zero_count}, NaN: {nan_count}")
         log(f"  Total sum (including negatives): {total_amount:,.2f}")
+        
+        # CRITICAL: Sample negative values to verify they're really negative
+        if neg_count > 0:
+            neg_samples = df_mb51[df_mb51["amount"] < 0].head(5)
+            log(f"  Sample negative values (to verify they're negative numbers, not strings):")
+            for idx, row in neg_samples.iterrows():
+                val = row["amount"]
+                log(f"    Value: {val}, Type: {type(val)}, Is negative: {val < 0}")
         
         df_mb51["plant"] = df_mb51["plant"].astype(str).str.strip()
         df_mb51["mv_type"] = df_mb51["mv_type"].astype(str).str.strip()
@@ -403,12 +451,32 @@ def main():
         log(f"  === Empty Storage Analysis (BEFORE groupby) ===")
         log(f"  Total rows: {len(empty_storage_df)}")
         neg_empty = empty_storage_df[empty_storage_df['amount'] < 0]
-        log(f"  Negative values: {len(neg_empty)} rows")
+        pos_empty = empty_storage_df[empty_storage_df['amount'] > 0]
+        log(f"  Positive values: {len(pos_empty)} rows, sum: {pos_empty['amount'].sum():,.2f}")
+        log(f"  Negative values: {len(neg_empty)} rows, sum: {neg_empty['amount'].sum():,.2f}")
+        log(f"  Net total (should match grouped): {empty_storage_df['amount'].sum():,.2f}")
+        
+        # Check for 641/642 specifically
+        empty_641 = empty_storage_df[empty_storage_df['mv_type'] == '641']
+        empty_642 = empty_storage_df[empty_storage_df['mv_type'] == '642']
+        log(f"  641 in empty storage: {len(empty_641)} rows, sum: {empty_641['amount'].sum():,.2f}")
+        log(f"  642 in empty storage: {len(empty_642)} rows, sum: {empty_642['amount'].sum():,.2f}")
+        
+        # CRITICAL: Show mv_text for 641 to see if it matches master_movement
+        if len(empty_641) > 0:
+            unique_mv_text_641 = empty_641['mv_text'].unique()
+            log(f"  Unique mv_text for 641 in MB51:")
+            for txt in unique_mv_text_641:
+                count = (empty_641['mv_text'] == txt).sum()
+                total = empty_641[empty_641['mv_text'] == txt]['amount'].sum()
+                neg_count = (empty_641[empty_641['mv_text'] == txt]['amount'] < 0).sum()
+                log(f"    '{txt}': {count} rows, sum={total:,.2f}, negatives={neg_count}")
+        
         if len(neg_empty) > 0:
             log(f"  Sample negative entries:")
             for idx in range(min(3, len(neg_empty))):
                 row = neg_empty.iloc[idx]
-                log(f"    Mat={row['material']}, Plant={row['plant_clean']}, MvType={row['mv_type']}, Amt={row['amount']}")
+                log(f"    Mat={row['material']}, Plant={row['plant_clean']}, MvType={row['mv_type']}, MvText='{row['mv_text']}', Amt={row['amount']}")
         
         # FIX: Add dropna=False to groupby
         grouped_mb51 = df_mb51_filtered.groupby(
@@ -418,12 +486,26 @@ def main():
         
         log(f"  Grouped MB51: {len(grouped_mb51)} combinations")
         
-        # Check if negatives survived groupby
+        # CRITICAL: Check if negatives survived groupby
         neg_after_group = (grouped_mb51['amount'] < 0).sum()
-        log(f"  Negative values after groupby: {neg_after_group}")
+        pos_after_group = (grouped_mb51['amount'] > 0).sum()
+        sum_after_group = grouped_mb51['amount'].sum()
+        
+        log(f"  After groupby - Positive: {pos_after_group}, Negative: {neg_after_group}")
+        log(f"  After groupby - Total sum: {sum_after_group:,.2f}")
+        
+        # Sample negative entries after groupby
+        if neg_after_group > 0:
+            neg_grouped = grouped_mb51[grouped_mb51['amount'] < 0].head(3)
+            log(f"  Sample negative after groupby:")
+            for idx, row in neg_grouped.iterrows():
+                log(f"    Mat={row['material']}, Storage={row['storage']}, MvType={row['mv_type']}, Amt={row['amount']}")
         
         # Create lookup
         mb51_lookup = {}
+        neg_in_dict = 0
+        pos_in_dict = 0
+        
         for _, row in grouped_mb51.iterrows():
             key = (
                 row['material'],
@@ -432,18 +514,33 @@ def main():
                 row['mv_type'],
                 row['mv_text']
             )
-            mb51_lookup[key] = row['amount']
+            amount = row['amount']
+            mb51_lookup[key] = amount
+            
+            # Count negative/positive
+            if amount < 0:
+                neg_in_dict += 1
+            elif amount > 0:
+                pos_in_dict += 1
         
         log(f"  Created mb51_lookup with {len(mb51_lookup)} keys")
+        log(f"  In lookup - Positive: {pos_in_dict}, Negative: {neg_in_dict}")
         
-        # Check negatives in lookup
-        neg_in_lookup = sum(1 for v in mb51_lookup.values() if v < 0)
-        log(f"  Negative values in lookup: {neg_in_lookup}")
+        # CRITICAL: Verify sum from lookup matches grouped sum
+        sum_from_lookup = sum(mb51_lookup.values())
+        log(f"  Sum from lookup: {sum_from_lookup:,.2f}")
+        log(f"  Sum from grouped: {sum_after_group:,.2f}")
+        if abs(sum_from_lookup - sum_after_group) > 0.01:
+            log(f"  ⚠️ ERROR: Sums don't match! Difference: {sum_from_lookup - sum_after_group:,.2f}")
         
-        # Create mv_type-only lookup for 641/642
+        # CRITICAL: We should NOT use mb51_lookup_mv for 641/642!
+        # The issue is that groupby by plant loses the mv_text detail
+        # We need to use the FULL lookup (mb51_lookup) which has mv_text
+        
+        # This was for debugging only, let's keep it but note the issue
         grouped_mv_type = df_mb51_filtered.groupby(
             ['material', 'plant_clean', 'mv_type'],
-            dropna=False  # CRITICAL
+            dropna=False
         ).agg({'amount': 'sum'}).reset_index()
         
         mb51_lookup_mv = {}
@@ -451,13 +548,24 @@ def main():
             key = (row['material'], row['plant_clean'], row['mv_type'])
             mb51_lookup_mv[key] = row['amount']
         
-        log(f"  Created mb51_lookup_mv with {len(mb51_lookup_mv)} keys")
+        log(f"  Created mb51_lookup_mv with {len(mb51_lookup_mv)} keys (for debugging only)")
         
-        # Check 641/642 negatives
+        # Check why 641/642 sums are different
         count_641_neg = sum(1 for k, v in mb51_lookup_mv.items() if k[2] == '641' and v < 0)
-        count_642_neg = sum(1 for k, v in mb51_lookup_mv.items() if k[2] == '642' and v < 0)
-        log(f"  641 with negative values: {count_641_neg}")
-        log(f"  642 with negative values: {count_642_neg}")
+        sum_641_mv = sum(v for k, v in mb51_lookup_mv.items() if k[2] == '641')
+        sum_642_mv = sum(v for k, v in mb51_lookup_mv.items() if k[2] == '642')
+        
+        # Compare with full lookup (the one we actually use)
+        sum_641_full = sum(v for k, v in mb51_lookup.items() if k[3] == '641' and k[2] == 'EMPTY_STORAGE')
+        sum_642_full = sum(v for k, v in mb51_lookup.items() if k[3] == '642' and k[2] == 'EMPTY_STORAGE')
+        
+        log(f"  641 sum by plant groupby: {sum_641_mv:,.2f}")
+        log(f"  641 sum in full lookup (EMPTY_STORAGE only): {sum_641_full:,.2f}")
+        log(f"  642 sum by plant groupby: {sum_642_mv:,.2f}")
+        log(f"  642 sum in full lookup (EMPTY_STORAGE only): {sum_642_full:,.2f}")
+        
+        # The full lookup is what we should use!
+        log(f"  NOTE: We use full lookup (with mv_text), not mv_type-only groupby")
 
         # Merge materials
         log(f"Merging materials from main file and MB51")
@@ -526,28 +634,46 @@ def main():
                 total = 0.0
                 found_any = False
                 details = []
+                positive_sum = 0.0
+                negative_sum = 0.0
                 
                 for mv_text in valid_texts:
                     lookup_key = (material, plant, 'EMPTY_STORAGE', mv_type_direct, mv_text)
                     amount = mb51_lookup.get(lookup_key, 0.0)
+                    
+                    # CRITICAL: Verify the amount is REALLY what we expect
                     if amount != 0:
                         found_any = True
-                        details.append(f"mv_text='{mv_text}' => {amount} {'(NEG)' if amount < 0 else ''}")
+                        if amount > 0:
+                            positive_sum += amount
+                        else:
+                            negative_sum += amount
+                        
+                        # Debug: Check if negative is really negative
+                        is_negative = amount < 0
+                        details.append(f"mv_text='{mv_text[:20]}' => {amount} (negative={is_negative})")
+                    
+                    # CRITICAL: Just add directly, don't do any conversion
                     total += amount
                 
-                # Debug first few materials
+                # Debug first few materials - SHOW BREAKDOWN
                 if lookup_stats['total_calls'] <= 3 and (len(details) > 0 or total != 0):
                     log(f"    BB/BC [{lookup_stats['total_calls']}] Mat={material}, Plant={plant}, mv_type={mv_type_direct}:")
                     if len(details) > 0:
                         for detail in details:
                             log(f"        {detail}")
-                    log(f"      TOTAL: {total} {'(includes negatives)' if total < 0 else ''}")
+                    log(f"      Positive sum: {positive_sum}")
+                    log(f"      Negative sum: {negative_sum}")
+                    log(f"      TOTAL: {total}")
+                    log(f"      Expected in Excel: {total}")
                 
                 if found_any or total != 0:
                     lookup_stats['found'] += 1
                 else:
                     lookup_stats['not_found'] += 1
                 
+                # CRITICAL: Return as-is, let Excel formula handle the math
+                # The sum already includes positive + negative correctly
                 return total
             
             # Normal case
@@ -878,18 +1004,31 @@ def main():
             if plant_exists_in_mb51:
                 bb9 = sumifs_mb51(material, None, None, plant, mv_type_direct="641")
                 bc9 = sumifs_mb51(material, None, None, plant, mv_type_direct="642")
+                
+                # Debug first few materials - show what we're writing
+                if idx < 3 and (bb9 != 0 or bc9 != 0):
+                    log(f"  [{idx}] Mat={material}, Plant={plant}")
+                    log(f"      BB (641) = {bb9} (type: {type(bb9)})")
+                    log(f"      BC (642) = {bc9} (type: {type(bc9)})")
             else:
                 bb9 = 0
                 bc9 = 0
             
             bd9_formula = f"=V{write_row}-BB{write_row}-BC{write_row}"
             
+            # CRITICAL: Write the actual numeric value, not formula, not abs
             ws.cell(row=write_row, column=get_column_index("BB"), value=bb9)
             ws.cell(row=write_row, column=get_column_index("BC"), value=bc9)
             ws.cell(row=write_row, column=get_column_index("BD"), value=bd9_formula)
+            
             if plant_exists_in_mb51:
                 totals["BB"] += bb9
                 totals["BC"] += bc9
+                
+                # Debug totals accumulation
+                if idx < 3 and (bb9 != 0 or bc9 != 0):
+                    log(f"      Running total BB: {totals['BB']}")
+                    log(f"      Running total BC: {totals['BC']}")
 
             # END STOCK
             bg9_formula = f"=H{write_row}+SUM(R{write_row}:Z{write_row})+SUM(AJ{write_row}:AZ{write_row})"
@@ -951,9 +1090,54 @@ def main():
         # Check for negative totals
         neg_totals = {k: v for k, v in totals.items() if v < 0}
         if neg_totals:
-            log(f"  === NEGATIVE TOTALS (GOOD!) ===")
+            log(f"  === NEGATIVE TOTALS (these are correct!) ===")
             for col, val in sorted(neg_totals.items()):
                 log(f"    {col}: {val:,.2f}")
+        
+        # CRITICAL: Show BB & BC totals specifically
+        log(f"  === BB & BC TOTALS (641/642) ===")
+        log(f"  BB (641) total across all materials: {totals.get('BB', 0):,.2f}")
+        log(f"  BC (642) total across all materials: {totals.get('BC', 0):,.2f}")
+        
+        # VERIFY against raw MB51
+        mb51_641_total = df_mb51_filtered[
+            (df_mb51_filtered['mv_type'] == '641') & 
+            (df_mb51_filtered['is_empty_storage'] == True)
+        ]['amount'].sum()
+        
+        mb51_642_total = df_mb51_filtered[
+            (df_mb51_filtered['mv_type'] == '642') & 
+            (df_mb51_filtered['is_empty_storage'] == True)
+        ]['amount'].sum()
+        
+        log(f"  === VERIFICATION against raw MB51 ===")
+        log(f"  641 in MB51 (empty storage): {mb51_641_total:,.2f}")
+        log(f"  642 in MB51 (empty storage): {mb51_642_total:,.2f}")
+        
+        bb_diff = totals.get('BB', 0) - mb51_641_total
+        bc_diff = totals.get('BC', 0) - mb51_642_total
+        
+        if abs(bb_diff) > 0.01:
+            log(f"  ⚠️ BB MISMATCH! Difference: {bb_diff:,.2f}")
+            log(f"     Expected: {mb51_641_total:,.2f}")
+            log(f"     Got: {totals.get('BB', 0):,.2f}")
+        else:
+            log(f"  ✓ BB matches MB51!")
+        
+        if abs(bc_diff) > 0.01:
+            log(f"  ⚠️ BC MISMATCH! Difference: {bc_diff:,.2f}")
+            log(f"     Expected: {mb51_642_total:,.2f}")
+            log(f"     Got: {totals.get('BC', 0):,.2f}")
+        else:
+            log(f"  ✓ BC matches MB51!")
+        
+        log(f"  These should match your manual check in MB51!")
+        
+        # Additional verification: count how many materials have non-zero BB/BC
+        bb_nonzero = sum(1 for k, v in totals.items() if k == 'BB' and v != 0)
+        bc_nonzero = sum(1 for k, v in totals.items() if k == 'BC' and v != 0)
+        log(f"  Materials with BB != 0: counted in loop")
+        log(f"  Materials with BC != 0: counted in loop")
 
         # Write formulas
         log("Writing formulas...")

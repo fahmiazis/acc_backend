@@ -15,4 +15,7 @@ route.patch('/edit/:id', trans.editAccessActive)
 route.get('/notif', trans.getNotif)
 route.get('/test', trans.testGetDocument)
 
+// download document
+route.get('/download/document', trans.downloadDocuments)
+
 module.exports = route
