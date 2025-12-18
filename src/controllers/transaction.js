@@ -127,318 +127,794 @@ const buildHeader = (dokumenNames) => {
 module.exports = {
   getDashboard: async (req, res) => {
     try {
-      // Extract and normalize query parameters
-      const extractParam = (param) => {
-        if (typeof param === 'object') return Object.values(param)[0]
-        return param || ''
+      let { limit, page, search, sort, typeSort, time, tipe, find } = req.query
+      let searchValue = ''
+      let sortValue = ''
+      let typeSortValue = ''
+      let timeValue = ''
+      let tipeValue = ''
+      let findValue = ''
+      if (typeof search === 'object') {
+        searchValue = Object.values(search)[0]
+      } else {
+        searchValue = search || ''
       }
-
-      const {
-        limit = 10,
-        page = 1,
-        search = '',
-        sort = 'id',
-        typeSort = 'DESC',
-        time = '',
-        tipe = 'daily',
-        find = ''
-      } = {
-        limit: parseInt(req.query.limit) || 10,
-        page: parseInt(req.query.page) || 1,
-        search: extractParam(req.query.search),
-        sort: extractParam(req.query.sort) || 'id',
-        typeSort: extractParam(req.query.typeSort) || 'DESC',
-        time: extractParam(req.query.time),
-        tipe: extractParam(req.query.tipe) || 'daily',
-        find: extractParam(req.query.find)
+      if (typeof find === 'object') {
+        findValue = Object.values(find)[0]
+      } else {
+        findValue = find || ''
       }
-
-      const { level, kode, name } = req.user
-      const offset = (page - 1) * limit
-
-      // Calculate time ranges
-      const getTimeRange = (timeValue, tipeValue) => {
-        if (tipeValue === 'monthly') {
-          return {
-            start: timeValue 
-              ? moment(timeValue).startOf('month').format('YYYY-MM-DD')
-              : moment().startOf('month').format('YYYY-MM-DD'),
-            end: timeValue
-              ? moment(timeValue).endOf('month').format('YYYY-MM-DD')
-              : moment().endOf('month').format('YYYY-MM-DD')
+      if (typeof sort === 'object') {
+        sortValue = Object.values(sort)[0]
+      } else {
+        sortValue = sort || 'id'
+      }
+      if (typeof time === 'object') {
+        timeValue = Object.values(time)[0]
+      } else {
+        timeValue = time || ''
+      }
+      if (typeof tipe === 'object') {
+        tipeValue = Object.values(tipe)[0]
+      } else {
+        tipeValue = tipe || 'daily'
+      }
+      if (typeof typeSort === 'object') {
+        typeSortValue = Object.values(typeSort)[0]
+      } else {
+        typeSortValue = typeSort || 'DESC'
+      }
+      if (!limit) {
+        limit = 10
+      } else {
+        limit = parseInt(limit)
+      }
+      if (!page) {
+        page = 1
+      } else {
+        page = parseInt(page)
+      }
+      //   const id = req.user.id
+      const level = req.user.level
+      const kode = req.user.kode
+      let timeUser = new Date(moment().format('YYYY-MM-DD 00:00'))
+      let timeUserTomo = new Date(moment().add(1, 'days').format('YYYY-MM-DD 00:00'))
+      let now = timeValue ? moment(timeValue).startOf('day').toDate() : moment().startOf('day').toDate()
+      let tomo = timeValue ? moment(timeValue).add(1, 'days').startOf('day').toDate() : moment().add(1, 'days').startOf('day').toDate()
+      if (level === 4) {
+        const result = await depo.findOne({
+          where: {
+            [Op.or]: [
+              { kode_plant: kode },
+              { kode_depo: kode }
+            ]
           }
-        }
-        return {
-          start: timeValue
-            ? moment(timeValue).startOf('day').format('YYYY-MM-DD')
-            : moment().startOf('day').format('YYYY-MM-DD'),
-          end: timeValue
-            ? moment(timeValue).add(1, 'days').startOf('day').format('YYYY-MM-DD')
-            : moment().add(1, 'days').startOf('day').format('YYYY-MM-DD')
-        }
-      }
-
-      const timeRange = getTimeRange(time, tipe)
-
-      // Handle level 4 and 5 (SA and Kasir)
-      if (level === 4 || level === 5) {
-        const userType = level === 4 ? 'sa' : 'kasir'
-        
-        // Get depo info
-        const depoQuery = `
-          SELECT status_depo, kode_plant 
-          FROM depo 
-          WHERE kode_plant = ? OR kode_depo = ?
-          LIMIT 1
-        `
-        const [depoResult] = await sequelize.query(depoQuery, {
-          replacements: [kode, kode],
-          type: QueryTypes.SELECT
         })
-
-        if (!depoResult) {
+        if (result) {
+          const cabang = result.status_depo
+          const results = await documents.findAndCountAll({
+            where: {
+              [Op.or]: [
+                { nama_dokumen: { [Op.like]: `%${searchValue}%` } }
+              ],
+              [Op.and]: [
+                {
+                  [Op.or]: [
+                    { access: { [Op.like]: `%${kode}%` } },
+                    { access: null }
+                  ]
+                },
+                { status_depo: cabang },
+                { uploadedBy: 'sa' },
+                { jenis_dokumen: { [Op.like]: `%${tipeValue}%` } }
+              ],
+              [Op.not]: { status: 'inactive' }
+            },
+            order: [[sortValue, typeSortValue]],
+            limit: 100,
+            offset: (page - 1) * 100
+          })
+          const pageInfo = pagination('/dokumen/get', req.query, page, limit, results.count)
+          if (results) {
+            if (tipeValue === 'monthly') {
+              timeUser = new Date(moment().startOf('month').format('YYYY-MM-DD'))
+              timeUserTomo = new Date(moment().add(1, 'month').startOf('month').format('YYYY-MM-DD'))
+            }
+            const cek = await activity.findAll({
+              where: {
+                [Op.and]: [
+                  { kode_plant: kode },
+                  { tipe: 'sa' },
+                  { jenis_dokumen: tipeValue }
+                ],
+                createdAt: {
+                  [Op.gt]: timeUser,
+                  [Op.lt]: timeUserTomo
+                }
+              }
+            })
+            if (cek.length > 0) {
+              return response(res, 'list dokumen', { results, pageInfo, cek })
+            } else {
+              if (tipeValue === 'daily') {
+                const now = new Date(moment().startOf('month').format('YYYY-MM-DD'))
+                const tomo = new Date(moment().add(1, 'month').startOf('month').format('YYYY-MM-DD'))
+                const find = await activity.findAll({
+                  where: {
+                    [Op.and]: [
+                      { kode_plant: kode },
+                      { tipe: 'sa' },
+                      { jenis_dokumen: tipeValue }
+                    ],
+                    createdAt: {
+                      [Op.lt]: tomo,
+                      [Op.gt]: now
+                    }
+                  }
+                })
+                if (find) {
+                  const temp = []
+                  find.map(item => {
+                    return temp.push(item.id)
+                  })
+                  for (let i = 0; i < find.length; i++) {
+                    const send = {
+                      access: 'lock'
+                    }
+                    const change = await activity.findByPk(temp[i])
+                    if (change) {
+                      await change.update(send)
+                    }
+                  }
+                  const data = {
+                    kode_plant: kode,
+                    status: 'Belum Upload',
+                    documentDate: new Date(moment().subtract(1, 'days')),
+                    access: 'unlock',
+                    jenis_dokumen: tipeValue === 'daily' ? 'daily' : 'monthly',
+                    tipe: 'sa'
+                  }
+                  const create = await activity.create(data)
+                  if (create) {
+                    return response(res, 'list dokumen', { results, pageInfo, cek: cek })
+                  } else {
+                    return response(res, 'failed to get dokumen', {}, 404, false)
+                  }
+                } else {
+                  const data = {
+                    kode_plant: kode,
+                    status: 'Belum Upload',
+                    documentDate: new Date(moment().subtract(1, 'days')),
+                    access: 'unlock',
+                    jenis_dokumen: tipeValue === 'daily' ? 'daily' : 'monthly',
+                    tipe: 'sa'
+                  }
+                  const create = await activity.create(data)
+                  if (create) {
+                    return response(res, 'list dokumen', { results, pageInfo, cek: cek })
+                  } else {
+                    return response(res, 'failed to get dokumen', {}, 404, false)
+                  }
+                }
+              } else {
+                const data = {
+                  kode_plant: kode,
+                  status: 'Belum Upload',
+                  documentDate: new Date(moment().subtract(1, 'days')),
+                  access: 'unlock',
+                  jenis_dokumen: tipeValue === 'daily' ? 'daily' : 'monthly',
+                  tipe: 'sa'
+                }
+                const create = await activity.create(data)
+                if (create) {
+                  return response(res, 'list dokumen', { results, pageInfo, cek: cek })
+                } else {
+                  return response(res, 'failed to get dokumen', {}, 404, false)
+                }
+              }
+            }
+          } else {
+            return response(res, 'failed to get user', {}, 404, false)
+          }
+        } else {
           return response(res, 'user tidak terhubung dengan depo manapun', {}, 404, false)
         }
-
-        // Get documents
-        const documentsQuery = `
-          SELECT * FROM documents
-          WHERE nama_dokumen LIKE ?
-            AND (access LIKE ? OR access IS NULL)
-            AND status_depo = ?
-            AND uploadedBy = ?
-            AND jenis_dokumen LIKE ?
-            AND status != 'inactive'
-          ORDER BY ${sort} ${typeSort}
-          LIMIT ? OFFSET ?
-        `
-        const documents = await sequelize.query(documentsQuery, {
-          replacements: [
-            `%${search}%`,
-            `%${kode}%`,
-            depoResult.status_depo,
-            userType,
-            `%${tipe}%`,
-            limit,
-            offset
-          ],
-          type: QueryTypes.SELECT
-        })
-
-        // Count total documents
-        const countQuery = `
-          SELECT COUNT(*) as total FROM documents
-          WHERE nama_dokumen LIKE ?
-            AND (access LIKE ? OR access IS NULL)
-            AND status_depo = ?
-            AND uploadedBy = ?
-            AND jenis_dokumen LIKE ?
-            AND status != 'inactive'
-        `
-        const [countResult] = await sequelize.query(countQuery, {
-          replacements: [
-            `%${search}%`,
-            `%${kode}%`,
-            depoResult.status_depo,
-            userType,
-            `%${tipe}%`
-          ],
-          type: QueryTypes.SELECT
-        })
-
-        const results = {
-          rows: documents,
-          count: countResult.total
-        }
-
-        const pageInfo = pagination('/dokumen/get', req.query, page, limit, results.count)
-
-        // Get or create activity
-        const activityQuery = `
-          SELECT * FROM activity
-          WHERE kode_plant = ?
-            AND tipe = ?
-            AND jenis_dokumen = ?
-            AND createdAt > ?
-            AND createdAt < ?
-        `
-        let cek = await sequelize.query(activityQuery, {
-          replacements: [kode, userType, tipe, timeRange.start, timeRange.end],
-          type: QueryTypes.SELECT
-        })
-
-        if (cek.length === 0) {
-          // Lock previous activities if daily
-          if (tipe === 'daily') {
-            const monthStart = moment().startOf('month').format('YYYY-MM-DD')
-            const monthEnd = moment().add(1, 'month').startOf('month').format('YYYY-MM-DD')
-            
-            await sequelize.query(`
-              UPDATE activity 
-              SET access = 'lock'
-              WHERE kode_plant = ?
-                AND tipe = ?
-                AND jenis_dokumen = ?
-                AND createdAt > ?
-                AND createdAt < ?
-            `, {
-              replacements: [kode, userType, tipe, monthStart, monthEnd]
-            })
-          }
-
-          // Create new activity
-          const insertQuery = `
-            INSERT INTO activity (kode_plant, status, documentDate, access, jenis_dokumen, tipe, createdAt, updatedAt)
-            VALUES (?, 'Belum Upload', ?, 'unlock', ?, ?, NOW(), NOW())
-          `
-          await sequelize.query(insertQuery, {
-            replacements: [
-              kode,
-              moment().subtract(1, 'days').format('YYYY-MM-DD'),
-              tipe,
-              userType
+      } else if (level === 5) {
+        const result = await depo.findOne({
+          where: {
+            [Op.or]: [
+              { kode_plant: kode },
+              { kode_depo: kode }
             ]
-          })
-
-          // Refresh cek
-          cek = await sequelize.query(activityQuery, {
-            replacements: [kode, userType, tipe, timeRange.start, timeRange.end],
-            type: QueryTypes.SELECT
-          })
-        }
-
-        return response(res, 'list dokumen', { results, pageInfo, cek })
-      }
-
-      // Handle level 1, 2, 3 (Admin, Supervisor, PIC)
-      if (level >= 1 && level <= 3) {
-        // Get PICs based on level
-        let picQuery = ''
-        let picReplacements = []
-
-        if (level === 3) {
-          picQuery = `
-            SELECT p.*, d.* 
-            FROM pic p
-            INNER JOIN depo d ON p.kode_depo = d.kode_depo
-            WHERE p.pic = ?
-              AND (d.kode_plant LIKE ? OR d.nama_depo LIKE ? OR d.home_town LIKE ?)
-            LIMIT ? OFFSET ?
-          `
-          picReplacements = [name, `%${find}%`, `%${find}%`, `%${find}%`, limit, offset]
-        } else if (level === 2) {
-          picQuery = `
-            SELECT p.*, d.* 
-            FROM pic p
-            INNER JOIN depo d ON p.kode_depo = d.kode_depo
-            WHERE p.spv = ?
-              AND (d.kode_plant LIKE ? OR d.nama_depo LIKE ? OR d.home_town LIKE ?)
-            LIMIT ? OFFSET ?
-          `
-          picReplacements = [name, `%${find}%`, `%${find}%`, `%${find}%`, limit, offset]
-        } else { // level 1
-          picQuery = `
-            SELECT p.*, d.* 
-            FROM pic p
-            INNER JOIN depo d ON p.kode_depo = d.kode_depo
-            WHERE (d.kode_plant LIKE ? OR d.nama_depo LIKE ? OR d.home_town LIKE ?)
-            LIMIT ? OFFSET ?
-          `
-          picReplacements = [`%${find}%`, `%${find}%`, `%${find}%`, limit, offset]
-        }
-
-        const picResults = await sequelize.query(picQuery, {
-          replacements: picReplacements,
-          type: QueryTypes.SELECT
-        })
-
-        // Count total PICs
-        const countPicQuery = picQuery.replace(/SELECT p\.\*, d\.\*/, 'SELECT COUNT(*) as total').replace(/LIMIT \? OFFSET \?/, '')
-        const [countPicResult] = await sequelize.query(countPicQuery, {
-          replacements: picReplacements.slice(0, -2),
-          type: QueryTypes.SELECT
-        })
-
-        const results = {
-          rows: picResults,
-          count: countPicResult.total
-        }
-
-        const pageInfo = pagination('/dashboard/get', req.query, page, limit, results.count)
-
-        if (!picResults.length) {
-          return response(res, 'depo no found', {}, 404, false)
-        }
-
-        // Get unique kode_depo
-        const kodeDepos = [...new Set(picResults.map(x => x.kode_depo))]
-
-        // Fetch SA and Kasir data in parallel
-        const fetchActivityData = async (userType) => {
-          const query = `
-            SELECT 
-              d.*,
-              a.id as activity_id,
-              a.kode_plant as activity_kode_plant,
-              a.status as activity_status,
-              a.documentDate,
-              a.access,
-              a.jenis_dokumen,
-              a.tipe,
-              a.createdAt as activity_createdAt,
-              GROUP_CONCAT(p.id) as path_ids,
-              GROUP_CONCAT(p.path) as paths
-            FROM depo d
-            LEFT JOIN activity a ON d.kode_plant = a.kode_plant
-              AND a.tipe = ?
-              AND a.jenis_dokumen LIKE ?
-              AND a.createdAt > ?
-              AND a.createdAt < ?
-            LEFT JOIN Path p ON a.id = p.activityId
-            LEFT JOIN documents doc ON d.kode_plant = doc.kode_plant
-              AND doc.nama_dokumen LIKE ?
-              AND doc.jenis_dokumen LIKE ?
-              AND doc.uploadedBy = ?
-              AND doc.status != 'inactive'
-            WHERE d.kode_plant IN (?)
-            GROUP BY d.kode_plant
-            LIMIT 1
-          `
-          
-          const results = []
-          for (const kodeDepo of kodeDepos) {
-            const data = await sequelize.query(query, {
-              replacements: [
-                userType,
-                `%${tipe}%`,
-                timeRange.start,
-                timeRange.end,
-                `%${search}%`,
-                `%${tipe}%`,
-                userType,
-                kodeDepo
-              ],
-              type: QueryTypes.SELECT
-            })
-            if (data.length > 0 && data[0].kode_plant) {
-              results.push(data[0])
-            }
           }
-          return results
+        })
+        if (result) {
+          const cabang = result.status_depo
+          const results = await documents.findAndCountAll({
+            where: {
+              [Op.or]: [
+                { nama_dokumen: { [Op.like]: `%${searchValue}%` } }
+              ],
+              [Op.and]: [
+                {
+                  [Op.or]: [
+                    { access: { [Op.like]: `%${kode}%` } },
+                    { access: null }
+                  ]
+                },
+                { status_depo: cabang },
+                { uploadedBy: 'kasir' },
+                { jenis_dokumen: { [Op.like]: `%${tipeValue}%` } }
+              ],
+              [Op.not]: { status: 'inactive' }
+            },
+            order: [[sortValue, typeSortValue]]
+          })
+          const pageInfo = pagination('/dokumen/get', req.query, page, limit, results.count)
+          if (results) {
+            if (tipeValue === 'monthly') {
+              timeUser = new Date(moment().startOf('month').format('YYYY-MM-DD'))
+              timeUserTomo = new Date(moment().add(1, 'month').startOf('month').format('YYYY-MM-DD'))
+            }
+            const cek = await activity.findAll({
+              where: {
+                [Op.and]: [
+                  { kode_plant: kode },
+                  { tipe: 'kasir' },
+                  { jenis_dokumen: tipeValue }
+                ],
+                createdAt: {
+                  [Op.lt]: timeUserTomo,
+                  [Op.gt]: timeUser
+                }
+              }
+            })
+            if (cek.length > 0) {
+              return response(res, 'list dokumen', { results, pageInfo, cek })
+            } else {
+              if (tipeValue === 'daily') {
+                const now = new Date(moment().clone().startOf('month').format('YYYY-MM-DD'))
+                const tomo = new Date(moment().add(1, 'month').startOf('month').format('YYYY-MM-DD'))
+                const find = await activity.findAll({
+                  where: {
+                    [Op.and]: [
+                      { kode_plant: kode },
+                      { tipe: 'kasir' },
+                      { jenis_dokumen: tipeValue }
+                    ],
+                    createdAt: {
+                      [Op.lt]: tomo,
+                      [Op.gt]: now
+                    }
+                  }
+                })
+                if (find) {
+                  const temp = []
+                  find.map(item => {
+                    return temp.push(item.id)
+                  })
+                  for (let i = 0; i < find.length; i++) {
+                    const send = {
+                      access: 'lock'
+                    }
+                    const change = await activity.findByPk(temp[i])
+                    if (change) {
+                      await change.update(send)
+                    }
+                  }
+                  const data = {
+                    kode_plant: kode,
+                    status: 'Belum Upload',
+                    documentDate: new Date(moment().subtract(1, 'days')),
+                    access: 'unlock',
+                    jenis_dokumen: tipeValue === 'daily' ? 'daily' : 'monthly',
+                    tipe: 'kasir'
+                  }
+                  const create = await activity.create(data)
+                  if (create) {
+                    return response(res, 'list dokumen', { results, pageInfo })
+                  } else {
+                    return response(res, 'failed to get dokumen', {}, 404, false)
+                  }
+                } else {
+                  const data = {
+                    kode_plant: kode,
+                    status: 'Belum Upload',
+                    documentDate: new Date(moment().subtract(1, 'days')),
+                    access: 'unlock',
+                    jenis_dokumen: tipeValue === 'daily' ? 'daily' : 'monthly',
+                    tipe: 'kasir'
+                  }
+                  const create = await activity.create(data)
+                  if (create) {
+                    return response(res, 'list dokumen', { results, pageInfo, cek })
+                  } else {
+                    return response(res, 'failed to get dokumen', {}, 404, false)
+                  }
+                }
+              } else {
+                const data = {
+                  kode_plant: kode,
+                  status: 'Belum Upload',
+                  documentDate: new Date(moment().subtract(1, 'days')),
+                  access: 'unlock',
+                  jenis_dokumen: tipeValue === 'daily' ? 'daily' : 'monthly',
+                  tipe: 'kasir'
+                }
+                const create = await activity.create(data)
+                if (create) {
+                  return response(res, 'list dokumen', { results, pageInfo, cek })
+                } else {
+                  return response(res, 'failed to get dokumen', {}, 404, false)
+                }
+              }
+            }
+          } else {
+            return response(res, 'failed to get dokumen', {}, 404, false)
+          }
+        } else {
+          return response(res, 'user tidak terhubung dengan depo manapun', {}, 404, false)
         }
-
-        const [sa, kasir] = await Promise.all([
-          fetchActivityData('sa'),
-          fetchActivityData('kasir')
-        ])
-
-        const all = [...sa, ...kasir].filter(x => x !== null && x !== undefined)
-
-        return response(res, 'list dokumen', { results, sa, kasir, all, pageInfo })
+      } else if (level === 3) {
+        const name = req.user.name
+        const results = await pic.findAndCountAll({
+          where: {
+            pic: name
+          },
+          limit: limit,
+          offset: (page - 1) * limit,
+          include: [
+            {
+              model: depo,
+              as: 'depo',
+              where: {
+                [Op.or]: [
+                  { kode_plant: { [Op.like]: `%${findValue}%` } },
+                  { nama_depo: { [Op.like]: `%${findValue}%` } },
+                  { home_town: { [Op.like]: `%${findValue}%` } }
+                ]
+              }
+            }
+          ]
+        })
+        const pageInfo = pagination('/dashboard/get', req.query, page, limit, results.count)
+        if (results) {
+          const depos = []
+          results.rows.map(x => {
+            return (
+              depos.push(x.depo)
+            )
+          })
+          if (depos.length > 0) {
+            const sa = []
+            const kasir = []
+            const all = []
+            if (tipeValue === 'monthly') {
+              now = new Date(moment(timeValue).startOf('month').format('YYYY-MM-DD'))
+              tomo = new Date(moment(timeValue).endOf('month').format('YYYY-MM-DD'))
+            }
+            for (let i = 0; i < depos.length; i++) {
+              const result = await depo.findAndCountAll({
+                where: {
+                  kode_plant: depos[i].kode_plant
+                },
+                include: [
+                  {
+                    model: activity,
+                    as: 'active',
+                    where: {
+                      [Op.and]: [
+                        { kode_plant: depos[i].kode_plant },
+                        { tipe: 'sa' },
+                        { jenis_dokumen: { [Op.like]: `%${tipeValue}%` } }
+                      ],
+                      createdAt: {
+                        [Op.lt]: tomo,
+                        [Op.gt]: now
+                      }
+                    },
+                    limit: 1,
+                    include: [
+                      {
+                        model: Path,
+                        as: 'doc',
+                        limit: 50
+                      }
+                    ]
+                  },
+                  {
+                    model: documents,
+                    as: 'dokumen',
+                    where: {
+                      [Op.or]: [
+                        { nama_dokumen: { [Op.like]: `%${searchValue}%` } }
+                      ],
+                      [Op.and]: [
+                        { jenis_dokumen: { [Op.like]: `%${tipeValue}%` } },
+                        { uploadedBy: 'sa' }
+                      ],
+                      [Op.not]: { status: 'inactive' }
+                    }
+                  }
+                ]
+              })
+              if (result) {
+                sa.push(result.rows[0])
+                if (result.rows[0] !== null && result.rows[0] !== undefined) {
+                  all.push(result.rows[0])
+                }
+              }
+            }
+            for (let i = 0; i < depos.length; i++) {
+              const result = await depo.findAndCountAll({
+                where: {
+                  kode_plant: depos[i].kode_plant
+                },
+                include: [
+                  {
+                    model: activity,
+                    as: 'active',
+                    where: {
+                      [Op.and]: [
+                        { kode_plant: depos[i].kode_plant },
+                        { tipe: 'kasir' },
+                        { jenis_dokumen: { [Op.like]: `%${tipeValue}%` } }
+                      ],
+                      createdAt: {
+                        [Op.lt]: tomo,
+                        [Op.gt]: now
+                      }
+                    },
+                    limit: 1,
+                    include: [
+                      {
+                        model: Path,
+                        as: 'doc',
+                        limit: 50
+                      }
+                    ]
+                  },
+                  {
+                    model: documents,
+                    as: 'dokumen',
+                    where: {
+                      [Op.or]: [
+                        { nama_dokumen: { [Op.like]: `%${searchValue}%` } }
+                      ],
+                      [Op.and]: [
+                        { jenis_dokumen: { [Op.like]: `%${tipeValue}%` } },
+                        { uploadedBy: 'kasir' }
+                      ],
+                      [Op.not]: { status: 'inactive' }
+                    }
+                  }
+                ]
+              })
+              if (result) {
+                kasir.push(result.rows[0])
+                if (result.rows[0] !== null && result.rows[0] !== undefined) {
+                  all.push(result.rows[0])
+                }
+              }
+            }
+            if (sa.length > 0 || kasir.length > 0) {
+              return response(res, 'list dokumen', { results, sa, kasir, all, pageInfo })
+            } else {
+              return response(res, 'list dokumen', { results, sa, kasir, all, pageInfo })
+            }
+          } else {
+            return response(res, 'depo no found', {}, 404, false)
+          }
+        } else {
+          return response(res, 'failed to get dokumen', {}, 404, false)
+        }
+      } else if (level === 2) {
+        const name = req.user.name
+        const results = await pic.findAndCountAll({
+          where: {
+            spv: name
+          },
+          limit: limit,
+          offset: (page - 1) * limit,
+          include: [
+            {
+              model: depo,
+              as: 'depo',
+              where: {
+                [Op.or]: [
+                  { kode_plant: { [Op.like]: `%${findValue}%` } },
+                  { nama_depo: { [Op.like]: `%${findValue}%` } },
+                  { home_town: { [Op.like]: `%${findValue}%` } }
+                ]
+              }
+            }
+          ]
+        })
+        const pageInfo = pagination('/dashboard/get', req.query, page, limit, results.count)
+        if (results) {
+          const depos = []
+          results.rows.map(x => {
+            return (
+              depos.push(x)
+            )
+          })
+          if (depos.length > 0) {
+            const sa = []
+            const kasir = []
+            const all = []
+            if (tipeValue === 'monthly') {
+              now = new Date(moment(timeValue).startOf('month').format('YYYY-MM-DD'))
+              tomo = new Date(moment(timeValue).endOf('month').format('YYYY-MM-DD'))
+            }
+            for (let i = 0; i < depos.length; i++) {
+              const result = await depo.findAndCountAll({
+                where: {
+                  kode_plant: depos[i].kode_depo
+                },
+                include: [
+                  {
+                    model: activity,
+                    as: 'active',
+                    where: {
+                      [Op.and]: [
+                        { kode_plant: depos[i].kode_depo },
+                        { tipe: 'sa' },
+                        { jenis_dokumen: { [Op.like]: `%${tipeValue}%` } }
+                      ],
+                      createdAt: {
+                        [Op.lt]: tomo,
+                        [Op.gt]: now
+                      }
+                    },
+                    limit: 1,
+                    include: [
+                      {
+                        model: Path,
+                        as: 'doc',
+                        limit: 50
+                      }
+                    ]
+                  },
+                  {
+                    model: documents,
+                    as: 'dokumen',
+                    where: {
+                      [Op.or]: [
+                        { nama_dokumen: { [Op.like]: `%${searchValue}%` } }
+                      ],
+                      [Op.and]: [
+                        { jenis_dokumen: { [Op.like]: `%${tipeValue}%` } },
+                        { uploadedBy: 'sa' }
+                      ],
+                      [Op.not]: { status: 'inactive' }
+                    }
+                  }
+                ]
+              })
+              if (result) {
+                sa.push(result.rows[0])
+                if (result.rows[0] !== null && result.rows[0] !== undefined) {
+                  all.push(result.rows[0])
+                }
+              }
+            }
+            for (let i = 0; i < depos.length; i++) {
+              const result = await depo.findAndCountAll({
+                where: {
+                  kode_plant: depos[i].kode_depo
+                },
+                include: [
+                  {
+                    model: activity,
+                    as: 'active',
+                    where: {
+                      [Op.and]: [
+                        { kode_plant: depos[i].kode_depo },
+                        { tipe: 'kasir' },
+                        { jenis_dokumen: { [Op.like]: `%${tipeValue}%` } }
+                      ],
+                      createdAt: {
+                        [Op.lt]: tomo,
+                        [Op.gt]: now
+                      }
+                    },
+                    limit: 1,
+                    include: [
+                      {
+                        model: Path,
+                        as: 'doc',
+                        limit: 50
+                      }
+                    ]
+                  },
+                  {
+                    model: documents,
+                    as: 'dokumen',
+                    where: {
+                      [Op.or]: [
+                        { nama_dokumen: { [Op.like]: `%${searchValue}%` } }
+                      ],
+                      [Op.and]: [
+                        { jenis_dokumen: { [Op.like]: `%${tipeValue}%` } },
+                        { uploadedBy: 'kasir' }
+                      ],
+                      [Op.not]: { status: 'inactive' }
+                    }
+                  }
+                ]
+              })
+              if (result) {
+                kasir.push(result.rows[0])
+                if (result.rows[0] !== null && result.rows[0] !== undefined) {
+                  all.push(result.rows[0])
+                }
+              }
+            }
+            if (sa.length > 0 || kasir.length > 0) {
+              return response(res, 'list dokumen', { results, sa, kasir, all, pageInfo })
+            } else {
+              return response(res, 'list dokumen', { results, sa, kasir, all, pageInfo })
+            }
+          } else {
+            return response(res, 'depo no found', {}, 404, false)
+          }
+        } else {
+          return response(res, 'failed to get dokumen', {}, 404, false)
+        }
+      } else if (level === 1) {
+        const results = await pic.findAndCountAll({
+          where: {
+            spv: { [Op.like]: '%%' }
+          },
+          limit: limit,
+          offset: (page - 1) * limit,
+          include: [
+            {
+              model: depo,
+              as: 'depo',
+              where: {
+                [Op.or]: [
+                  { kode_plant: { [Op.like]: `%${findValue}%` } },
+                  { nama_depo: { [Op.like]: `%${findValue}%` } },
+                  { home_town: { [Op.like]: `%${findValue}%` } }
+                ]
+              }
+            }
+          ]
+        })
+        const pageInfo = pagination('/dashboard/get', req.query, page, limit, results.count)
+        if (results) {
+          const depos = []
+          results.rows.map(x => {
+            return (
+              depos.push(x)
+            )
+          })
+          if (depos.length > 0) {
+            const sa = []
+            const kasir = []
+            const all = []
+            if (tipeValue === 'monthly') {
+              now = new Date(moment(timeValue).startOf('month').format('YYYY-MM-DD'))
+              tomo = new Date(moment(timeValue).endOf('month').format('YYYY-MM-DD'))
+            }
+            for (let i = 0; i < depos.length; i++) {
+              const result = await depo.findAndCountAll({
+                where: {
+                  kode_plant: depos[i].kode_depo
+                },
+                include: [
+                  {
+                    model: activity,
+                    as: 'active',
+                    where: {
+                      [Op.and]: [
+                        { kode_plant: depos[i].kode_depo },
+                        { tipe: 'sa' },
+                        { jenis_dokumen: { [Op.like]: `%${tipeValue}%` } }
+                      ],
+                      createdAt: {
+                        [Op.lt]: tomo,
+                        [Op.gt]: now
+                      }
+                    },
+                    limit: 1,
+                    include: [
+                      {
+                        model: Path,
+                        as: 'doc',
+                        limit: 50
+                      }
+                    ]
+                  },
+                  {
+                    model: documents,
+                    as: 'dokumen',
+                    where: {
+                      [Op.or]: [
+                        { nama_dokumen: { [Op.like]: `%${searchValue}%` } }
+                      ],
+                      [Op.and]: [
+                        { jenis_dokumen: { [Op.like]: `%${tipeValue}%` } },
+                        { uploadedBy: 'sa' }
+                      ],
+                      [Op.not]: { status: 'inactive' }
+                    }
+                  }
+                ]
+              })
+              if (result) {
+                sa.push(result.rows[0])
+                if (result.rows[0] !== null && result.rows[0] !== undefined) {
+                  all.push(result.rows[0])
+                }
+              }
+            }
+            for (let i = 0; i < depos.length; i++) {
+              const result = await depo.findAndCountAll({
+                where: {
+                  kode_plant: depos[i].kode_depo
+                },
+                include: [
+                  {
+                    model: activity,
+                    as: 'active',
+                    where: {
+                      [Op.and]: [
+                        { kode_plant: depos[i].kode_depo },
+                        { tipe: 'kasir' },
+                        { jenis_dokumen: { [Op.like]: `%${tipeValue}%` } }
+                      ],
+                      createdAt: {
+                        [Op.lt]: tomo,
+                        [Op.gt]: now
+                      }
+                    },
+                    limit: 1,
+                    include: [
+                      {
+                        model: Path,
+                        as: 'doc',
+                        limit: 50
+                      }
+                    ]
+                  },
+                  {
+                    model: documents,
+                    as: 'dokumen',
+                    where: {
+                      [Op.or]: [
+                        { nama_dokumen: { [Op.like]: `%${searchValue}%` } }
+                      ],
+                      [Op.and]: [
+                        { jenis_dokumen: { [Op.like]: `%${tipeValue}%` } },
+                        { uploadedBy: 'kasir' }
+                      ],
+                      [Op.not]: { status: 'inactive' }
+                    }
+                  }
+                ]
+              })
+              if (result) {
+                kasir.push(result.rows[0])
+                if (result.rows[0] !== null && result.rows[0] !== undefined) {
+                  all.push(result.rows[0])
+                }
+              }
+            }
+            if (sa.length > 0 || kasir.length > 0) {
+              return response(res, 'list dokumen', { results, sa, kasir, all, pageInfo })
+            } else {
+              return response(res, 'list dokumen', { results, sa, kasir, all, pageInfo })
+            }
+          } else {
+            return response(res, 'depo no found', {}, 404, false)
+          }
+        } else {
+          return response(res, 'failed to get dokumen', {}, 404, false)
+        }
       }
-
     } catch (error) {
-      console.error('Dashboard error:', error)
       return response(res, error.message, {}, 500, false)
     }
   },
