@@ -2980,7 +2980,7 @@ module.exports = {
       }
       
       for (const file of files) {
-        const filePath = path.join(__dirname, '../', file.path)
+        const filePath = path.join(__dirname, '../../', file.path)
         
         // Check if file exists
         if (fs.existsSync(filePath)) {
