@@ -2869,11 +2869,25 @@ module.exports = {
         type: QueryTypes.SELECT
       })
 
-      // Check file existence
-      const fileCheck = files.map(file => ({
-        ...file,
-        fileExists: fs.existsSync(path.join(__dirname, '../../', file.path))
-      }))
+      // Check file existence with multiple path attempts
+      const fileCheck = files.slice(0, 5).map(file => {
+        const attempts = [
+          { method: '__dirname + ../', path: path.join(__dirname, '../', file.path) },
+          { method: '__dirname + ../../', path: path.join(__dirname, '../../', file.path) },
+          { method: '__dirname only', path: path.join(__dirname, file.path) },
+          { method: 'process.cwd()', path: path.join(process.cwd(), file.path) },
+          { method: 'path.resolve', path: path.resolve(file.path) }
+        ]
+        
+        return {
+          ...file,
+          pathAttempts: attempts.map(attempt => ({
+            method: attempt.method,
+            fullPath: attempt.path,
+            exists: fs.existsSync(attempt.path)
+          }))
+        }
+      })
 
       return res.json({
         success: true,
@@ -2966,7 +2980,7 @@ module.exports = {
       }
       
       for (const file of files) {
-        const filePath = path.join(__dirname, '../../', file.path)
+        const filePath = path.join(__dirname, '../', file.path)
         
         // Check if file exists
         if (fs.existsSync(filePath)) {
@@ -2986,8 +3000,17 @@ module.exports = {
       if (filesToZip.length === 0) {
         return res.status(404).json({
           success: false,
-          message: `File ditemukan di database (${files.length}) tetapi tidak ada di storage`
+          message: `Ditemukan ${files.length} record di database, tetapi tidak ada satupun file yang ada di storage. Kemungkinan file sudah dihapus atau path tidak valid.`,
+          stats: {
+            totalInDb: files.length,
+            foundInStorage: 0
+          }
         })
+      }
+
+      // Log warning if some files missing
+      if (fileStats.notFound > 0) {
+        console.warn(`⚠️ Warning: ${fileStats.notFound} dari ${files.length} file tidak ditemukan di storage`)
       }
 
       // Create zip filename
