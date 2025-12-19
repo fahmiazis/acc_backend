@@ -3387,7 +3387,7 @@ module.exports = {
           const sanitizedDokumen = file.dokumen.replace(/[<>:"/\\|?*]/g, '-')
           
           // Create new filename: kode_depo-dokumen-originalname
-          const newFileName = `${file.kode_depo}-${sanitizedDokumen}-${moment(file.updatedAt).format('DD MM YYYY')}-${originalFileName}`
+          const newFileName = `${file.kode_depo};${sanitizedDokumen};${moment(file.updatedAt).format('DD MM YYYY')};${originalFileName}`
           
           filesToZip.push({
             path: filePath,
