@@ -125,7 +125,7 @@ const buildHeader = (dokumenNames) => {
 // }
 
 module.exports = {
-  getDashboardOld: async (req, res) => {
+  getDashboard: async (req, res) => {
     try {
       let { limit, page, search, sort, typeSort, time, tipe, find } = req.query
       let searchValue = ''
@@ -918,7 +918,7 @@ module.exports = {
       return response(res, error.message, {}, 500, false)
     }
   },
-  getDashboard: async (req, res) => {
+  getDashboardOld: async (req, res) => {
     try {
       // Extract and normalize query parameters
       const extractParam = (param) => {
