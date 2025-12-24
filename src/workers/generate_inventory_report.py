@@ -264,6 +264,7 @@ def main():
             ("BS00", "Transfer Stock"): "AF",
             ("BS00", "Pemusnahan"): "AG",
             ("BS00", "Adjustment"): "AH",
+            ("BS00", "Intra Gudang Masuk"): "AI",
             
             # AI00 - FIXED: Added "Intra Gudang Masuk" as new column AS
             ("AI00", "Terima Barang"): "AJ",
@@ -777,7 +778,7 @@ def main():
         ws["AB6"].alignment = center
         bs00_movements = [
             ("AB", "Terima Barang"), ("AC", "Retur Beli"), ("AD", "Penjualan"),
-            ("AE", "Retur Jual"), ("AF", "Transfer Stock"), ("AG", "Pemusnahan"), ("AH", "Adjustment")
+            ("AE", "Retur Jual"), ("AF", "Transfer Stock"), ("AG", "Pemusnahan"), ("AH", "Adjustment"), ("AI", "Intra Gudang Masuk")
         ]
         for col, label7 in bs00_movements:
             ws[f"{col}7"] = label7
@@ -862,7 +863,7 @@ def main():
         
         # UPDATED: List of all target columns with new layout
         all_target_columns = ["R", "S", "T", "U", "V", "W", "X", "Y", "Z",
-                              "AB", "AC", "AD", "AE", "AF", "AG", "AH",
+                              "AB", "AC", "AD", "AE", "AF", "AG", "AH", "AI",
                               "AJ", "AK", "AL", "AM", "AN", "AO", "AP", "AQ", "AR",
                               "AT", "AU", "AV", "AW", "AX", "AY", "AZ", "BA",
                               "BC", "BD"]
@@ -989,7 +990,7 @@ def main():
         
         # UPDATED: sum_columns with new layout
         sum_columns = ["R", "S", "T", "U", "V", "W", "X", "Y", "Z",
-                      "AB", "AC", "AD", "AE", "AF", "AG", "AH",
+                      "AB", "AC", "AD", "AE", "AF", "AG", "AH", "AI"
                       "AJ", "AK", "AL", "AM", "AN", "AO", "AP", "AQ", "AR",
                       "AT", "AU", "AV", "AW", "AX", "AY", "AZ", "BA",
                       "BC", "BD", "BE"]

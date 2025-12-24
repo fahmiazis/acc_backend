@@ -3495,5 +3495,37 @@ module.exports = {
         })
       }
     }
+  },
+  getStatistics: async (req, res) => {
+    try {
+      const kode = req.user.kode
+      const level = req.user.level
+      
+      // Query untuk mendapatkan data statistik per bulan
+      const statistics = await Path.findAll({
+        where: {
+          [Op.and]: [
+            level === 5 || level === 4 ? { kode_depo: kode } : { [Op.not]: { id: null } },
+            {createdAt: {
+              [Op.gte]: moment().subtract(6, 'months').startOf('month').toDate()
+            }}
+          ]
+        },
+        attributes: [
+          [sequelize.fn('DATE_FORMAT', sequelize.col('createdAt'), '%Y-%m'), 'month'],
+          [sequelize.fn('COUNT', sequelize.col('id')), 'total'],
+          [sequelize.fn('SUM', sequelize.literal("CASE WHEN status_dokumen = 1 THEN 1 ELSE 0 END")), 'uploaded'],
+          [sequelize.fn('SUM', sequelize.literal("CASE WHEN status_dokumen = 3 THEN 1 ELSE 0 END")), 'approved'],
+          [sequelize.fn('SUM', sequelize.literal("CASE WHEN status_dokumen = 0 THEN 1 ELSE 0 END")), 'rejected']
+        ],
+        group: ['month'],
+        order: [[sequelize.literal('month'), 'ASC']],
+        raw: true
+      })
+      
+      return response(res, 'success', { result: statistics })
+    } catch (error) {
+      return response(res, error.message, {}, 500, false)
+    }
   }
 }
