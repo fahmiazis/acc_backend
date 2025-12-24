@@ -1,7 +1,7 @@
-# generate_inventory_report.py - FIXED: Negative values now included
-# FIX 1: Removed .fillna(0) on amount conversion
-# FIX 2: Added dropna=False to all groupby operations
-# FIX 3: Enhanced debugging for negative values
+# generate_inventory_report.py - FIXED: Added "Intra Gudang Masuk" to AI00
+# Group MB51 by (Material, Plant, Storage, Movement Type, Movement Type Text)
+# Then map mv_text -> mv_grouping -> determine target column
+# FILTER: Only process GS00, BS00, AI00, TR00, EMPTY_STORAGE
 
 import sys
 import json
@@ -129,6 +129,52 @@ class SheetCache:
                     grouped_bs = df_clean.groupby(['material', 'plant'], dropna=False)['bs_amount'].sum()
                     self.caches['mb5b_awal_bs'] = grouped_bs.to_dict()
                     log(f"  MB5B AWAL BS cache: {len(self.caches['mb5b_awal_bs'])} entries")
+        
+        # Cache MB5B
+        if '13. MB5B' in self.sheets:
+            df = self.sheets['13. MB5B']
+            cols = list(df.columns)
+            mat_col = find_col(cols, ["Material"])
+            plant_col = find_col(cols, ["Plnt", "Plant"])
+            gs_col = find_col(cols, ["GS"])
+            bs_col = find_col(cols, ["BS"])
+            
+            if mat_col and (gs_col or bs_col):
+                df_clean = df.copy()
+                df_clean['material'] = df_clean[mat_col].astype(str).str.strip()
+                df_clean['plant'] = df_clean[plant_col].astype(str).str.strip() if plant_col else ''
+                
+                if gs_col:
+                    df_clean['gs_amount'] = pd.to_numeric(df_clean[gs_col], errors='coerce').fillna(0)
+                    grouped_gs = df_clean.groupby(['material', 'plant'], dropna=False)['gs_amount'].sum()
+                    self.caches['mb5b_gs'] = grouped_gs.to_dict()
+                    log(f"  MB5B GS cache: {len(self.caches['mb5b_gs'])} entries")
+                
+                if bs_col:
+                    df_clean['bs_amount'] = pd.to_numeric(df_clean[bs_col], errors='coerce').fillna(0)
+                    grouped_bs = df_clean.groupby(['material', 'plant'], dropna=False)['bs_amount'].sum()
+                    self.caches['mb5b_bs'] = grouped_bs.to_dict()
+                    log(f"  MB5B BS cache: {len(self.caches['mb5b_bs'])} entries")
+        
+        # Cache EDS
+        if '14. SALDO AKHIR EDS' in self.sheets:
+            df = self.sheets['14. SALDO AKHIR EDS']
+            cols = list(df.columns)
+            mat_col = find_col(cols, ["Material"])
+            plant_col = find_col(cols, ["Plant"])
+            sloc_col = find_col(cols, ["Storage Location", "Storage Loc"])
+            amt_col = find_col(cols, ["Quantity", "QTY"])
+            
+            if mat_col and amt_col:
+                df_clean = df.copy()
+                df_clean['material'] = df_clean[mat_col].astype(str).str.strip()
+                df_clean['plant'] = df_clean[plant_col].astype(str).str.strip() if plant_col else ''
+                df_clean['sloc'] = df_clean[sloc_col].astype(str).str.strip() if sloc_col else ''
+                df_clean['amount'] = pd.to_numeric(df_clean[amt_col], errors='coerce').fillna(0)
+                
+                grouped = df_clean.groupby(['material', 'plant', 'sloc'], dropna=False)['amount'].sum()
+                self.caches['eds'] = grouped.to_dict()
+                log(f"  EDS cache: {len(self.caches['eds'])} entries")
 
     def get_saldo_awal(self, material, plant, sloc_type):
         if 'saldo_awal' not in self.caches:
@@ -176,73 +222,76 @@ def main():
                                   for i, c in enumerate(df_master_mov.columns)]
 
         # Inventory mapping
-        log("Creating lookup dictionaries...")
+        log("Creating inventory lookup...")
         df_master_inv['plant'] = df_master_inv['plant'].astype(str).str.strip()
         inv_map = df_master_inv.set_index('plant')[['area', 'kode_dist', 'profit_center']].to_dict('index')
         
-        # Build movement reference lookup
-        log("Building movement reference lookup...")
-        df_master_mov['mv_type'] = df_master_mov['mv_type'].astype(str).str.strip()
+        # Build mv_text -> mv_grouping mapping
+        log("Building movement text -> grouping mapping...")
         df_master_mov['mv_text'] = df_master_mov['mv_text'].astype(str).str.strip().str.lower()
-        df_master_mov['storage_loc'] = df_master_mov['storage_loc'].astype(str).str.strip().str.upper()
         df_master_mov['mv_grouping'] = df_master_mov['mv_grouping'].astype(str).str.strip()
         
-        movement_reference = defaultdict(list)
+        # Create mapping: mv_text -> mv_grouping (use first occurrence if duplicates)
+        mv_text_to_grouping = {}
         for _, row in df_master_mov.iterrows():
-            if pd.notna(row['mv_grouping']) and row['mv_grouping']:
-                key = (row['storage_loc'], row['mv_grouping'])
-                movement_reference[key].append({
-                    'mv_type': row['mv_type'],
-                    'mv_text': row['mv_text']
-                })
+            mv_text = row['mv_text']
+            mv_grouping = row['mv_grouping']
+            if mv_text and mv_text != 'nan' and mv_grouping and mv_grouping != 'nan':
+                if mv_text not in mv_text_to_grouping:
+                    mv_text_to_grouping[mv_text] = mv_grouping
         
-        log(f"  Movement reference: {len(movement_reference)} (storage+grouping) combinations")
+        log(f"  Created {len(mv_text_to_grouping)} mv_text -> mv_grouping mappings")
         
-        # Build lookup by mv_type only (for BB & BC)
-        # CRITICAL: Also track IN/OUT direction from master_movement
-        movement_by_type = defaultdict(set)  # Use SET to avoid duplicates!
-        movement_direction = {}
+        # Build storage + mv_grouping -> column mapping
+        log("Building (storage, mv_grouping) -> column mapping...")
+        storage_grouping_to_column = {
+            # GS00
+            ("GS00", "Terima Barang"): "R",
+            ("GS00", "Retur Beli"): "S",
+            ("GS00", "Penjualan"): "T",
+            ("GS00", "Retur Jual"): "U",
+            ("GS00", "Intra Gudang Masuk"): "V",
+            ("GS00", "Intra Gudang"): "W",
+            ("GS00", "Transfer Stock"): "X",
+            ("GS00", "Pemusnahan"): "Y",
+            ("GS00", "Adjustment"): "Z",
+            
+            # BS00
+            ("BS00", "Terima Barang"): "AB",
+            ("BS00", "Retur Beli"): "AC",
+            ("BS00", "Penjualan"): "AD",
+            ("BS00", "Retur Jual"): "AE",
+            ("BS00", "Transfer Stock"): "AF",
+            ("BS00", "Pemusnahan"): "AG",
+            ("BS00", "Adjustment"): "AH",
+            
+            # AI00 - FIXED: Added "Intra Gudang Masuk" as new column AS
+            ("AI00", "Terima Barang"): "AJ",
+            ("AI00", "Retur Beli"): "AK",
+            ("AI00", "Penjualan"): "AL",
+            ("AI00", "Retur Jual"): "AM",
+            ("AI00", "Intra Gudang Masuk"): "AN",  # NEW COLUMN
+            ("AI00", "Intra Gudang"): "AO",
+            ("AI00", "Transfer Stock"): "AP",
+            ("AI00", "Pemusnahan"): "AQ",
+            ("AI00", "Adjustment"): "AR",
+            
+            # TR00 - Shifted by 1 column
+            ("TR00", "Terima Barang"): "AT",
+            ("TR00", "Retur Beli"): "AU",
+            ("TR00", "Penjualan"): "AV",
+            ("TR00", "Retur Jual"): "AW",
+            ("TR00", "Intra Gudang"): "AX",
+            ("TR00", "Transfer Stock"): "AY",
+            ("TR00", "Pemusnahan"): "AZ",
+            ("TR00", "Adjustment"): "BA",
+            
+            # 641/642 (empty storage) - Shifted by 1 column
+            ("EMPTY_STORAGE", "Intra Gudang"): "BC",  # 641
+            ("EMPTY_STORAGE", "Intra Gudang"): "BD",  # 642
+        }
         
-        for _, row in df_master_mov.iterrows():
-            if pd.notna(row['mv_type']) and row['mv_type']:
-                mv_type = row['mv_type']
-                mv_text = row['mv_text']
-                
-                # Use set to automatically deduplicate
-                movement_by_type[mv_type].add(mv_text)
-                
-                # Determine direction
-                if mv_type not in movement_direction:
-                    grouping = str(row.get('mv_grouping', '')).lower()
-                    if any(x in grouping for x in ['terima', 'retur jual', 'masuk']):
-                        movement_direction[mv_type] = 'IN'
-                    elif any(x in grouping for x in ['penjualan', 'retur beli', 'keluar', 'pemusnahan']):
-                        movement_direction[mv_type] = 'OUT'
-                    else:
-                        try:
-                            type_num = int(mv_type)
-                            first_digit = type_num // 100
-                            if first_digit in [1, 3, 5]:
-                                movement_direction[mv_type] = 'IN'
-                            else:
-                                movement_direction[mv_type] = 'OUT'
-                        except:
-                            movement_direction[mv_type] = 'IN'
-        
-        # Convert sets back to lists
-        movement_by_type = {k: list(v) for k, v in movement_by_type.items()}
-        
-        log(f"  Movement by type: {len(movement_by_type)} unique mv_types")
-        
-        # Debug: Show counts for 641/642
-        if '641' in movement_by_type:
-            log(f"  Movement 641: {len(movement_by_type['641'])} unique mv_text (after dedup)")
-            log(f"    Direction: {movement_direction.get('641', 'UNKNOWN')}")
-            log(f"    mv_text values: {movement_by_type['641']}")  # SHOW THE ACTUAL TEXT
-        if '642' in movement_by_type:
-            log(f"  Movement 642: {len(movement_by_type['642'])} unique mv_text (after dedup)")
-            log(f"    Direction: {movement_direction.get('642', 'UNKNOWN')}")
-            log(f"    mv_text values: {movement_by_type['642']}")
+        log(f"  Created {len(storage_grouping_to_column)} (storage, mv_grouping) -> column mappings")
 
         # Read MB51
         log(f"Reading MB51...")
@@ -306,12 +355,8 @@ def main():
             log(f"  ERROR converting dates: {str(e)}")
             df_mb51["posting_date"] = pd.NaT
         
-        # FIX: Don't use fillna(0) - keep NaN as NaN, don't convert negatives to 0
-        # CRITICAL: Check if negative values are REALLY negative (not string "-2100")
+        # Convert amount - keep negative values
         df_mb51["amount"] = pd.to_numeric(df_mb51["amount"], errors="coerce")
-        
-        # Debug: Check data type and negative values BEFORE any filtering
-        log(f"  Amount column dtype: {df_mb51['amount'].dtype}")
         
         neg_count = (df_mb51["amount"] < 0).sum()
         pos_count = (df_mb51["amount"] > 0).sum()
@@ -321,15 +366,7 @@ def main():
         
         log(f"  === AMOUNT DISTRIBUTION (RAW MB51) ===")
         log(f"  Positive: {pos_count}, Negative: {neg_count}, Zero: {zero_count}, NaN: {nan_count}")
-        log(f"  Total sum (including negatives): {total_amount:,.2f}")
-        
-        # CRITICAL: Sample negative values to verify they're really negative
-        if neg_count > 0:
-            neg_samples = df_mb51[df_mb51["amount"] < 0].head(5)
-            log(f"  Sample negative values (to verify they're negative numbers, not strings):")
-            for idx, row in neg_samples.iterrows():
-                val = row["amount"]
-                log(f"    Value: {val}, Type: {type(val)}, Is negative: {val < 0}")
+        log(f"  Total sum: {total_amount:,.2f}")
         
         df_mb51["plant"] = df_mb51["plant"].astype(str).str.strip()
         df_mb51["mv_type"] = df_mb51["mv_type"].astype(str).str.strip()
@@ -429,64 +466,46 @@ def main():
                 
                 log(f"  Found {len(existing_materials)} existing materials")
 
-        # Use ALL MB51 data
+        # NEW LOGIC: Map unknown storages to GS00
         df_mb51_filtered = df_mb51.copy()
-        log(f"Using all MB51 data: {len(df_mb51_filtered)} rows")
+        log(f"MB51 data before storage mapping: {len(df_mb51_filtered)} rows")
+        
+        # Define known storages
+        known_storages = ['GS00', 'BS00', 'AI00', 'TR00', 'EMPTY_STORAGE']
+        
+        # Find rows with unknown storage
+        unknown_storage_mask = ~df_mb51_filtered['storage'].isin(known_storages)
+        unknown_storage_count = unknown_storage_mask.sum()
+        
+        if unknown_storage_count > 0:
+            log(f"Found {unknown_storage_count} rows with unknown storage")
+            
+            # Show unique unknown storages
+            unknown_storages = df_mb51_filtered[unknown_storage_mask]['storage'].unique()
+            log(f"  Unknown storages: {list(unknown_storages)[:10]}")  # Show first 10
+            
+            # Map unknown storages to GS00
+            df_mb51_filtered.loc[unknown_storage_mask, 'storage'] = 'GS00'
+            log(f"  → Mapped all unknown storages to GS00")
+        
+        log(f"After storage mapping: {len(df_mb51_filtered)} rows (all included)")
         
         # Get unique plants from MB51
         df_mb51_filtered['plant_clean'] = df_mb51_filtered['plant'].astype(str).str.strip().str.upper()
         mb51_plants = set(df_mb51_filtered['plant_clean'].unique())
         log(f"Unique plants in MB51: {len(mb51_plants)}")
-        
-        mb51_material_plant_pairs = set(
-            zip(df_mb51_filtered['material'], df_mb51_filtered['plant_clean'])
-        )
-        log(f"Unique (material, plant) pairs in MB51: {len(mb51_material_plant_pairs)}")
 
-        # Create MB51 lookup
-        log("Creating MB51 lookup by exact mv_type + mv_text...")
+        # Group MB51 by (Material, Plant, Storage, Movement Type, Movement Type Text)
+        log("=== Grouping MB51 by exact combination ===")
+        log("Grouping by: (Material, Plant, Storage, Movement Type, Movement Type Text)")
         
-        # Debug: Check negative values in empty storage BEFORE groupby
-        empty_storage_df = df_mb51_filtered[df_mb51_filtered['is_empty_storage'] == True]
-        log(f"  === Empty Storage Analysis (BEFORE groupby) ===")
-        log(f"  Total rows: {len(empty_storage_df)}")
-        neg_empty = empty_storage_df[empty_storage_df['amount'] < 0]
-        pos_empty = empty_storage_df[empty_storage_df['amount'] > 0]
-        log(f"  Positive values: {len(pos_empty)} rows, sum: {pos_empty['amount'].sum():,.2f}")
-        log(f"  Negative values: {len(neg_empty)} rows, sum: {neg_empty['amount'].sum():,.2f}")
-        log(f"  Net total (should match grouped): {empty_storage_df['amount'].sum():,.2f}")
-        
-        # Check for 641/642 specifically
-        empty_641 = empty_storage_df[empty_storage_df['mv_type'] == '641']
-        empty_642 = empty_storage_df[empty_storage_df['mv_type'] == '642']
-        log(f"  641 in empty storage: {len(empty_641)} rows, sum: {empty_641['amount'].sum():,.2f}")
-        log(f"  642 in empty storage: {len(empty_642)} rows, sum: {empty_642['amount'].sum():,.2f}")
-        
-        # CRITICAL: Show mv_text for 641 to see if it matches master_movement
-        if len(empty_641) > 0:
-            unique_mv_text_641 = empty_641['mv_text'].unique()
-            log(f"  Unique mv_text for 641 in MB51:")
-            for txt in unique_mv_text_641:
-                count = (empty_641['mv_text'] == txt).sum()
-                total = empty_641[empty_641['mv_text'] == txt]['amount'].sum()
-                neg_count = (empty_641[empty_641['mv_text'] == txt]['amount'] < 0).sum()
-                log(f"    '{txt}': {count} rows, sum={total:,.2f}, negatives={neg_count}")
-        
-        if len(neg_empty) > 0:
-            log(f"  Sample negative entries:")
-            for idx in range(min(3, len(neg_empty))):
-                row = neg_empty.iloc[idx]
-                log(f"    Mat={row['material']}, Plant={row['plant_clean']}, MvType={row['mv_type']}, MvText='{row['mv_text']}', Amt={row['amount']}")
-        
-        # FIX: Add dropna=False to groupby
         grouped_mb51 = df_mb51_filtered.groupby(
             ['material', 'plant_clean', 'storage', 'mv_type', 'mv_text'],
-            dropna=False  # CRITICAL: Include rows with NaN
+            dropna=False
         ).agg({'amount': 'sum'}).reset_index()
         
-        log(f"  Grouped MB51: {len(grouped_mb51)} combinations")
+        log(f"  Grouped MB51: {len(grouped_mb51)} unique combinations")
         
-        # CRITICAL: Check if negatives survived groupby
         neg_after_group = (grouped_mb51['amount'] < 0).sum()
         pos_after_group = (grouped_mb51['amount'] > 0).sum()
         sum_after_group = grouped_mb51['amount'].sum()
@@ -494,78 +513,113 @@ def main():
         log(f"  After groupby - Positive: {pos_after_group}, Negative: {neg_after_group}")
         log(f"  After groupby - Total sum: {sum_after_group:,.2f}")
         
-        # Sample negative entries after groupby
-        if neg_after_group > 0:
-            neg_grouped = grouped_mb51[grouped_mb51['amount'] < 0].head(3)
-            log(f"  Sample negative after groupby:")
-            for idx, row in neg_grouped.iterrows():
-                log(f"    Mat={row['material']}, Storage={row['storage']}, MvType={row['mv_type']}, Amt={row['amount']}")
+        # Map mv_text to mv_grouping
+        log("Mapping mv_text to mv_grouping...")
+        grouped_mb51['mv_grouping'] = grouped_mb51['mv_text'].map(mv_text_to_grouping)
         
-        # Create lookup
+        # Count how many were mapped
+        mapped_count = grouped_mb51['mv_grouping'].notna().sum()
+        unmapped_count = grouped_mb51['mv_grouping'].isna().sum()
+        
+        log(f"  Mapped: {mapped_count}/{len(grouped_mb51)}")
+        log(f"  Unmapped: {unmapped_count}/{len(grouped_mb51)}")
+        
+        if unmapped_count > 0:
+            log(f"  === UNMAPPED mv_text DETAILS ===")
+            unmapped_df = grouped_mb51[grouped_mb51['mv_grouping'].isna()].copy()
+            
+            # Group by mv_text to see frequency
+            unmapped_summary = unmapped_df.groupby(['mv_text', 'mv_type', 'storage']).agg({
+                'amount': 'sum',
+                'material': 'count'
+            }).reset_index()
+            unmapped_summary.columns = ['mv_text', 'mv_type', 'storage', 'total_amount', 'count']
+            unmapped_summary = unmapped_summary.sort_values('total_amount', ascending=False)
+            
+            log(f"  Total unmapped combinations: {len(unmapped_summary)}")
+            log(f"  All unmapped movements (sorted by total_amount):")
+            for idx, row in unmapped_summary.iterrows():
+                log(f"    mv_text='{row['mv_text']}', mv_type={row['mv_type']}, storage={row['storage']}, amount={row['total_amount']:,.2f}, occurrences={row['count']}")
+        
+        # Determine target column
+        log("Determining target columns...")
+        
+        def get_target_column(row):
+            storage = row['storage']
+            mv_grouping = row['mv_grouping']
+            mv_type = row['mv_type']
+            
+            # Handle empty storage 641/642 separately
+            if storage == 'EMPTY_STORAGE':
+                if mv_type == '641':
+                    return 'BC'
+                elif mv_type == '642':
+                    return 'BD'
+            
+            # Use storage + mv_grouping mapping
+            if pd.notna(mv_grouping):
+                key = (storage, mv_grouping)
+                return storage_grouping_to_column.get(key, None)
+            
+            return None
+        
+        grouped_mb51['target_column'] = grouped_mb51.apply(get_target_column, axis=1)
+        
+        # Count how many have target columns
+        has_target = grouped_mb51['target_column'].notna().sum()
+        no_target = grouped_mb51['target_column'].isna().sum()
+        
+        log(f"  Has target column: {has_target}/{len(grouped_mb51)}")
+        log(f"  No target column: {no_target}/{len(grouped_mb51)}")
+        
+        if no_target > 0:
+            log(f"  === NO TARGET COLUMN DETAILS ===")
+            no_target_df = grouped_mb51[grouped_mb51['target_column'].isna()].copy()
+            
+            # Group by combination to see frequency
+            no_target_summary = no_target_df.groupby(['storage', 'mv_grouping', 'mv_type', 'mv_text']).agg({
+                'amount': 'sum',
+                'material': 'count'
+            }).reset_index()
+            no_target_summary.columns = ['storage', 'mv_grouping', 'mv_type', 'mv_text', 'total_amount', 'count']
+            no_target_summary = no_target_summary.sort_values('total_amount', ascending=False)
+            
+            log(f"  Total combinations without target: {len(no_target_summary)}")
+            log(f"  All combinations without target column (sorted by amount):")
+            for idx, row in no_target_summary.iterrows():
+                log(f"    Storage={row['storage']}, mv_grouping={row['mv_grouping']}, mv_type={row['mv_type']}, mv_text='{row['mv_text']}', amount={row['total_amount']:,.2f}, count={row['count']}")
+        
+        # Create lookup: (material, plant, target_column) -> amount
+        log("Creating lookup dictionary...")
         mb51_lookup = {}
-        neg_in_dict = 0
-        pos_in_dict = 0
         
         for _, row in grouped_mb51.iterrows():
-            key = (
-                row['material'],
-                row['plant_clean'],
-                row['storage'],
-                row['mv_type'],
-                row['mv_text']
-            )
-            amount = row['amount']
-            mb51_lookup[key] = amount
-            
-            # Count negative/positive
-            if amount < 0:
-                neg_in_dict += 1
-            elif amount > 0:
-                pos_in_dict += 1
+            if pd.notna(row['target_column']):
+                key = (row['material'], row['plant_clean'], row['target_column'])
+                
+                # If key exists, add to it (shouldn't happen, but just in case)
+                if key in mb51_lookup:
+                    mb51_lookup[key] += row['amount']
+                else:
+                    mb51_lookup[key] = row['amount']
         
-        log(f"  Created mb51_lookup with {len(mb51_lookup)} keys")
-        log(f"  In lookup - Positive: {pos_in_dict}, Negative: {neg_in_dict}")
+        log(f"  Created lookup with {len(mb51_lookup)} keys")
         
-        # CRITICAL: Verify sum from lookup matches grouped sum
-        sum_from_lookup = sum(mb51_lookup.values())
-        log(f"  Sum from lookup: {sum_from_lookup:,.2f}")
-        log(f"  Sum from grouped: {sum_after_group:,.2f}")
-        if abs(sum_from_lookup - sum_after_group) > 0.01:
-            log(f"  ⚠️ ERROR: Sums don't match! Difference: {sum_from_lookup - sum_after_group:,.2f}")
+        # Verify totals per column
+        log(f"  === Totals per target column ===")
+        column_totals = defaultdict(float)
+        for key, amount in mb51_lookup.items():
+            target_col = key[2]
+            column_totals[target_col] += amount
         
-        # CRITICAL: We should NOT use mb51_lookup_mv for 641/642!
-        # The issue is that groupby by plant loses the mv_text detail
-        # We need to use the FULL lookup (mb51_lookup) which has mv_text
+        for col in sorted(column_totals.keys()):
+            log(f"    {col}: {column_totals[col]:,.2f}")
         
-        # This was for debugging only, let's keep it but note the issue
-        grouped_mv_type = df_mb51_filtered.groupby(
-            ['material', 'plant_clean', 'mv_type'],
-            dropna=False
-        ).agg({'amount': 'sum'}).reset_index()
-        
-        mb51_lookup_mv = {}
-        for _, row in grouped_mv_type.iterrows():
-            key = (row['material'], row['plant_clean'], row['mv_type'])
-            mb51_lookup_mv[key] = row['amount']
-        
-        log(f"  Created mb51_lookup_mv with {len(mb51_lookup_mv)} keys (for debugging only)")
-        
-        # Check why 641/642 sums are different
-        count_641_neg = sum(1 for k, v in mb51_lookup_mv.items() if k[2] == '641' and v < 0)
-        sum_641_mv = sum(v for k, v in mb51_lookup_mv.items() if k[2] == '641')
-        sum_642_mv = sum(v for k, v in mb51_lookup_mv.items() if k[2] == '642')
-        
-        # Compare with full lookup (the one we actually use)
-        sum_641_full = sum(v for k, v in mb51_lookup.items() if k[3] == '641' and k[2] == 'EMPTY_STORAGE')
-        sum_642_full = sum(v for k, v in mb51_lookup.items() if k[3] == '642' and k[2] == 'EMPTY_STORAGE')
-        
-        log(f"  641 sum by plant groupby: {sum_641_mv:,.2f}")
-        log(f"  641 sum in full lookup (EMPTY_STORAGE only): {sum_641_full:,.2f}")
-        log(f"  642 sum by plant groupby: {sum_642_mv:,.2f}")
-        log(f"  642 sum in full lookup (EMPTY_STORAGE only): {sum_642_full:,.2f}")
-        
-        # The full lookup is what we should use!
-        log(f"  NOTE: We use full lookup (with mv_text), not mv_type-only groupby")
+        # Verify 641/642 specifically
+        bc_total = column_totals.get('BC', 0)
+        bd_total = column_totals.get('BD', 0)
+        log(f"  BC (641) total: {bc_total:,.2f}")
+        log(f"  BD (642) total: {bd_total:,.2f}")
 
         # Merge materials
         log(f"Merging materials from main file and MB51")
@@ -583,7 +637,6 @@ def main():
         ).size().reset_index(name='count')
         
         new_materials_added = 0
-        skipped_different_plant = 0
         
         for _, mb_row in mb51_materials.iterrows():
             plant_normalized = str(mb_row['plant_clean']).strip().upper()
@@ -594,7 +647,6 @@ def main():
                 continue
             
             if len(main_file_plants) > 0 and plant_normalized not in main_file_plants:
-                skipped_different_plant += 1
                 continue
             
             all_materials.append({
@@ -614,98 +666,6 @@ def main():
             raise ValueError("No materials found")
 
         grouped_materials = pd.DataFrame(all_materials)
-
-        # SUMIFS function with negative value support
-        lookup_stats = {'found': 0, 'not_found': 0, 'total_calls': 0}
-        debug_samples = []
-        
-        def sumifs_mb51(material, mv_grouping_label, storage_loc, plant, mv_type_direct=None):
-            """Lookup MB51 data - now includes negative values"""
-            lookup_stats['total_calls'] += 1
-            
-            # Special case: BB & BC
-            if mv_type_direct:
-                valid_texts = movement_by_type.get(mv_type_direct, [])
-                
-                if not valid_texts:
-                    lookup_stats['not_found'] += 1
-                    return 0.0
-                
-                total = 0.0
-                found_any = False
-                details = []
-                positive_sum = 0.0
-                negative_sum = 0.0
-                
-                for mv_text in valid_texts:
-                    lookup_key = (material, plant, 'EMPTY_STORAGE', mv_type_direct, mv_text)
-                    amount = mb51_lookup.get(lookup_key, 0.0)
-                    
-                    # CRITICAL: Verify the amount is REALLY what we expect
-                    if amount != 0:
-                        found_any = True
-                        if amount > 0:
-                            positive_sum += amount
-                        else:
-                            negative_sum += amount
-                        
-                        # Debug: Check if negative is really negative
-                        is_negative = amount < 0
-                        details.append(f"mv_text='{mv_text[:20]}' => {amount} (negative={is_negative})")
-                    
-                    # CRITICAL: Just add directly, don't do any conversion
-                    total += amount
-                
-                # Debug first few materials - SHOW BREAKDOWN
-                if lookup_stats['total_calls'] <= 3 and (len(details) > 0 or total != 0):
-                    log(f"    BB/BC [{lookup_stats['total_calls']}] Mat={material}, Plant={plant}, mv_type={mv_type_direct}:")
-                    if len(details) > 0:
-                        for detail in details:
-                            log(f"        {detail}")
-                    log(f"      Positive sum: {positive_sum}")
-                    log(f"      Negative sum: {negative_sum}")
-                    log(f"      TOTAL: {total}")
-                    log(f"      Expected in Excel: {total}")
-                
-                if found_any or total != 0:
-                    lookup_stats['found'] += 1
-                else:
-                    lookup_stats['not_found'] += 1
-                
-                # CRITICAL: Return as-is, let Excel formula handle the math
-                # The sum already includes positive + negative correctly
-                return total
-            
-            # Normal case
-            ref_key = (storage_loc, mv_grouping_label)
-            valid_combinations = movement_reference.get(ref_key, [])
-            
-            if not valid_combinations:
-                lookup_stats['not_found'] += 1
-                return 0.0
-            
-            total = 0.0
-            found_any = False
-            
-            for combo in valid_combinations:
-                lookup_key = (
-                    material,
-                    plant,
-                    storage_loc,
-                    combo['mv_type'],
-                    combo['mv_text']
-                )
-                amount = mb51_lookup.get(lookup_key, 0.0)
-                if amount != 0:
-                    found_any = True
-                total += amount
-            
-            if found_any:
-                lookup_stats['found'] += 1
-            else:
-                lookup_stats['not_found'] += 1
-            
-            return total
 
         # Material descriptions
         log("Loading material descriptions...")
@@ -756,7 +716,7 @@ def main():
         ws.title = "Output Report INV ARUS BARANG"
         center = Alignment(horizontal="center", vertical="center")
 
-        # HEADER (same as before)
+        # HEADER
         ws["F1"], ws["F2"], ws["F3"], ws["F4"], ws["F5"], ws["F7"] = "Nama Area", "Plant", "Kode Dist", "Profit Center", "Periode", "Material"
         
         if not grouped_materials.empty:
@@ -766,12 +726,12 @@ def main():
         ws["G7"] = "Material Description"
         ws["A8"], ws["B8"], ws["C8"], ws["D8"], ws["E8"], ws["F8"] = "Nama Area", "Plant", "Kode Dist", "Profit Center", "Periode", "source data"
         
-        # Row 8 labels
+        # Row 8 labels - UPDATED for new column layout
         ws["R8"], ws["S8"], ws["T8"], ws["U8"], ws["V8"], ws["W8"], ws["X8"], ws["Y8"] = "DTB", "BPPR", "LBP", "LBP", "DTB", "BPPR", "ALIH STATUS", "Pemusnahan"
         ws["AB8"], ws["AC8"], ws["AD8"], ws["AE8"], ws["AF8"], ws["AG8"] = "DTB", "BPPR", "LBP", "LBP", "ALIH STATUS", "Pemusnahan"
-        ws["AJ8"], ws["AK8"], ws["AL8"], ws["AM8"], ws["AN8"], ws["AO8"], ws["AP8"] = "DTB", "BPPR", "LBP", "LBP", "BPPR", "ALIH STATUS", "Pemusnahan"
-        ws["AS8"], ws["AT8"], ws["AU8"], ws["AV8"], ws["AW8"], ws["AX8"], ws["AY8"] = "DTB", "BPPR", "LBP", "LBP", "BPPR", "ALIH STATUS", "Pemusnahan"
-        ws["BB8"], ws["BC8"] = "641", "642"
+        ws["AJ8"], ws["AK8"], ws["AL8"], ws["AM8"], ws["AN8"], ws["AO8"], ws["AP8"], ws["AQ8"] = "DTB", "BPPR", "LBP", "LBP", "DTB", "BPPR", "ALIH STATUS", "Pemusnahan"
+        ws["AT8"], ws["AU8"], ws["AV8"], ws["AW8"], ws["AX8"], ws["AY8"], ws["AZ8"] = "DTB", "BPPR", "LBP", "LBP", "BPPR", "ALIH STATUS", "Pemusnahan"
+        ws["BC8"], ws["BD8"] = "641", "642"
 
         ws.merge_cells("H4:M4")
         ws["H4"] = f"SALDO AWAL {bulan} {tahun}"
@@ -795,7 +755,7 @@ def main():
             ws.cell(row=7, column=col, value="S.Aw").alignment = center
 
         ws["R1"] = "ctrl balance MB51"
-        ws.merge_cells("R5:BD5")
+        ws.merge_cells("R5:BE5")
         ws["R5"] = "SAP - MB51"
         ws["R5"].alignment = center
 
@@ -823,69 +783,73 @@ def main():
             ws[f"{col}7"] = label7
             ws[f"{col}7"].alignment = center
 
-        ws.merge_cells("AJ6:AQ6")
+        # UPDATED: AI00 now has 9 columns (added "Intra Gudang Masuk")
+        ws.merge_cells("AJ6:AR6")
         ws["AJ6"] = "AI00"
         ws["AJ6"].alignment = center
         ai00_movements = [
             ("AJ", "Terima Barang"), ("AK", "Retur Beli"), ("AL", "Penjualan"),
-            ("AM", "Retur Jual"), ("AN", "Intra Gudang"), ("AO", "Transfer Stock"),
-            ("AP", "Pemusnahan"), ("AQ", "Adjustment")
+            ("AM", "Retur Jual"), ("AN", "Intra Gudang Masuk"), ("AO", "Intra Gudang"),
+            ("AP", "Transfer Stock"), ("AQ", "Pemusnahan"), ("AR", "Adjustment")
         ]
         for col, label7 in ai00_movements:
             ws[f"{col}7"] = label7
             ws[f"{col}7"].alignment = center
 
-        ws.merge_cells("AS6:AZ6")
-        ws["AS6"] = "TR00"
-        ws["AS6"].alignment = center
+        # UPDATED: TR00 shifted to AT-BA
+        ws.merge_cells("AT6:BA6")
+        ws["AT6"] = "TR00"
+        ws["AT6"].alignment = center
         tr00_movements = [
-            ("AS", "Terima Barang"), ("AT", "Retur Beli"), ("AU", "Penjualan"),
-            ("AV", "Retur Jual"), ("AW", "Intra Gudang"), ("AX", "Transfer Stock"),
-            ("AY", "Pemusnahan"), ("AZ", "Adjustment")
+            ("AT", "Terima Barang"), ("AU", "Retur Beli"), ("AV", "Penjualan"),
+            ("AV", "Retur Jual"), ("AX", "Intra Gudang"), ("AY", "Transfer Stock"),
+            ("AZ", "Pemusnahan"), ("BA", "Adjustment")
         ]
         for col, label7 in tr00_movements:
             ws[f"{col}7"] = label7
             ws[f"{col}7"].alignment = center
 
-        ws.merge_cells("BB6:BD6")
-        ws["BB6"] = "641 dan 642 tanpa sloc"
-        ws["BB6"].alignment = center
-        ws["BB7"], ws["BC7"], ws["BD7"] = "Intra Gudang", "Intra Gudang", "CEK"
-        ws["BE3"], ws["BE4"] = "-->stock in transit", "jika selisih cek ke MB5T"
+        # UPDATED: 641/642 shifted to BC-BE
+        ws.merge_cells("BC6:BE6")
+        ws["BC6"] = "641 dan 642 tanpa sloc"
+        ws["BC6"].alignment = center
+        ws["BC7"], ws["BD7"], ws["BE7"] = "Intra Gudang", "Intra Gudang", "CEK"
+        ws["BF3"], ws["BF4"] = "-->stock in transit", "jika selisih cek ke MB5T"
 
-        ws.merge_cells("BG4:BL4")
-        ws["BG4"] = f"END STOCK {prev_month} {prev_year}"
-        ws["BG4"].alignment = center
-        ws.merge_cells("BG5:BI5")
-        ws["BG5"] = "SALDO AKHIR"
-        ws["BG5"].alignment = center
-        ws.merge_cells("BJ5:BL5")
-        ws["BJ5"] = "SAP - MB5B"
-        ws["BJ5"].alignment = center
-        ws["BM5"] = "DIFF"
-        ws["BM5"].alignment = center
+        # UPDATED: END STOCK shifted
+        ws.merge_cells("BH4:BM4")
+        ws["BH4"] = f"END STOCK {prev_month} {prev_year}"
+        ws["BH4"].alignment = center
+        ws.merge_cells("BH5:BJ5")
+        ws["BH5"] = "SALDO AKHIR"
+        ws["BH5"].alignment = center
+        ws.merge_cells("BK5:BM5")
+        ws["BK5"] = "SAP - MB5B"
+        ws["BK5"].alignment = center
+        ws["BN5"] = "DIFF"
+        ws["BN5"].alignment = center
 
-        ws["BG6"], ws["BH6"], ws["BI6"] = "GS00", "BS00", "Grand Total"
-        ws["BJ6"], ws["BK6"], ws["BL6"] = "GS", "BS", "Grand Total"
-        ws["BM6"], ws["BN6"], ws["BO6"] = "GS", "BS", "Grand Total"
+        ws["BH6"], ws["BI6"], ws["BJ6"] = "GS00", "BS00", "Grand Total"
+        ws["BK6"], ws["BL6"], ws["BM6"] = "GS", "BS", "Grand Total"
+        ws["BN6"], ws["BO6"], ws["BP6"] = "GS", "BS", "Grand Total"
 
-        for col in range(59, 68):
+        for col in range(60, 69):
             ws.cell(row=6, column=col).alignment = center
             ws.cell(row=7, column=col, value="S.Ak").alignment = center
 
-        ws["BP7"] = "CEK SELISIH VS BULAN LALU"
-        ws["BQ7"] = "kalo ada selisih atas inputan LOG1, LOG2 -> konfirmasi pa Reza utk diselesaikan"
+        ws["BQ7"] = "CEK SELISIH VS BULAN LALU"
+        ws["BR7"] = "kalo ada selisih atas inputan LOG1, LOG2 -> konfirmasi pa Reza utk diselesaikan"
 
-        ws.merge_cells("BR5:BT5")
-        ws["BR5"] = "STOCK - EDS"
-        ws["BR5"].alignment = center
-        ws["BU5"] = "DIFF"
-        ws["BU5"].alignment = center
+        ws.merge_cells("BS5:BU5")
+        ws["BS5"] = "STOCK - EDS"
+        ws["BS5"].alignment = center
+        ws["BV5"] = "DIFF"
+        ws["BV5"].alignment = center
 
-        ws["BR6"], ws["BS6"], ws["BT6"] = "GS", "BS", "Grand Total"
-        ws["BU6"], ws["BV6"], ws["BW6"] = "GS", "BS", "Grand Total"
+        ws["BS6"], ws["BT6"], ws["BU6"] = "GS", "BS", "Grand Total"
+        ws["BV6"], ws["BW6"], ws["BX6"] = "GS", "BS", "Grand Total"
 
-        for col in range(70, 76):
+        for col in range(71, 77):
             ws.cell(row=6, column=col).alignment = center
             ws.cell(row=7, column=col, value="S.Ak").alignment = center
 
@@ -893,9 +857,15 @@ def main():
         log("Calculating body rows...")
         write_row = 9
         totals = defaultdict(float)
-        plants_not_in_mb51 = set()
         
         num_materials = len(grouped_materials)
+        
+        # UPDATED: List of all target columns with new layout
+        all_target_columns = ["R", "S", "T", "U", "V", "W", "X", "Y", "Z",
+                              "AB", "AC", "AD", "AE", "AF", "AG", "AH",
+                              "AJ", "AK", "AL", "AM", "AN", "AO", "AP", "AQ", "AR",
+                              "AT", "AU", "AV", "AW", "AX", "AY", "AZ", "BA",
+                              "BC", "BD"]
         
         for idx in range(num_materials):
             if idx % 100 == 0:
@@ -910,9 +880,6 @@ def main():
             material_desc = material_desc_map.get(material, "")
             
             plant_exists_in_mb51 = plant in mb51_plants
-            
-            if not plant_exists_in_mb51:
-                plants_not_in_mb51.add(plant)
 
             # Write basic info
             ws.cell(row=write_row, column=1, value=area)
@@ -948,231 +915,111 @@ def main():
             ws.cell(row=write_row, column=15, value=o9_formula)
             ws.cell(row=write_row, column=16, value=p9_formula)
 
-            # GS00 movements
-            gs00_values = {}
+            # Write all columns from lookup
             if plant_exists_in_mb51:
-                for col, label7 in gs00_movements:
-                    val = sumifs_mb51(material, label7, "GS00", plant)
-                    gs00_values[col] = val
-                    ws.cell(row=write_row, column=get_column_index(col), value=val)
-                    totals[col] += val
+                for target_col in all_target_columns:
+                    lookup_key = (material, plant, target_col)
+                    amount = mb51_lookup.get(lookup_key, 0.0)
+                    
+                    ws.cell(row=write_row, column=get_column_index(target_col), value=amount)
+                    totals[target_col] += amount
             else:
-                for col, label7 in gs00_movements:
-                    gs00_values[col] = 0
-                    ws.cell(row=write_row, column=get_column_index(col), value=0)
+                # Plant not in MB51, write zeros
+                for target_col in all_target_columns:
+                    ws.cell(row=write_row, column=get_column_index(target_col), value=0)
 
-            # BS00 movements
-            bs00_values = {}
-            if plant_exists_in_mb51:
-                for col, label7 in bs00_movements:
-                    val = sumifs_mb51(material, label7, "BS00", plant)
-                    bs00_values[col] = val
-                    ws.cell(row=write_row, column=get_column_index(col), value=val)
-                    totals[col] += val
-            else:
-                for col, label7 in bs00_movements:
-                    bs00_values[col] = 0
-                    ws.cell(row=write_row, column=get_column_index(col), value=0)
+            # UPDATED: BE formula (check) - V vs BC vs BD
+            be9_formula = f"=V{write_row}-BC{write_row}-BD{write_row}"
+            ws.cell(row=write_row, column=get_column_index("BE"), value=be9_formula)
 
-            # AI00 movements
-            ai00_values = {}
-            if plant_exists_in_mb51:
-                for col, label7 in ai00_movements:
-                    val = sumifs_mb51(material, label7, "AI00", plant)
-                    ai00_values[col] = val
-                    ws.cell(row=write_row, column=get_column_index(col), value=val)
-                    totals[col] += val
-            else:
-                for col, label7 in ai00_movements:
-                    ai00_values[col] = 0
-                    ws.cell(row=write_row, column=get_column_index(col), value=0)
-
-            # TR00 movements
-            tr00_values = {}
-            if plant_exists_in_mb51:
-                for col, label7 in tr00_movements:
-                    val = sumifs_mb51(material, label7, "TR00", plant)
-                    tr00_values[col] = val
-                    ws.cell(row=write_row, column=get_column_index(col), value=val)
-                    totals[col] += val
-            else:
-                for col, label7 in tr00_movements:
-                    tr00_values[col] = 0
-                    ws.cell(row=write_row, column=get_column_index(col), value=0)
-
-            # 641/642 - NOW WITH NEGATIVE VALUES
-            if plant_exists_in_mb51:
-                bb9 = sumifs_mb51(material, None, None, plant, mv_type_direct="641")
-                bc9 = sumifs_mb51(material, None, None, plant, mv_type_direct="642")
-                
-                # Debug first few materials - show what we're writing
-                if idx < 3 and (bb9 != 0 or bc9 != 0):
-                    log(f"  [{idx}] Mat={material}, Plant={plant}")
-                    log(f"      BB (641) = {bb9} (type: {type(bb9)})")
-                    log(f"      BC (642) = {bc9} (type: {type(bc9)})")
-            else:
-                bb9 = 0
-                bc9 = 0
+            # UPDATED: END STOCK formulas (shifted to BH, BI, BJ)
+            bh9_formula = f"=H{write_row}+SUM(R{write_row}:Z{write_row})+SUM(AJ{write_row}:BA{write_row})"
+            bi9_formula = f"=I{write_row}+SUM(AB{write_row}:AH{write_row})"
+            bj9_formula = f"=BH{write_row}+BI{write_row}"
             
-            bd9_formula = f"=V{write_row}-BB{write_row}-BC{write_row}"
-            
-            # CRITICAL: Write the actual numeric value, not formula, not abs
-            ws.cell(row=write_row, column=get_column_index("BB"), value=bb9)
-            ws.cell(row=write_row, column=get_column_index("BC"), value=bc9)
-            ws.cell(row=write_row, column=get_column_index("BD"), value=bd9_formula)
-            
-            if plant_exists_in_mb51:
-                totals["BB"] += bb9
-                totals["BC"] += bc9
-                
-                # Debug totals accumulation
-                if idx < 3 and (bb9 != 0 or bc9 != 0):
-                    log(f"      Running total BB: {totals['BB']}")
-                    log(f"      Running total BC: {totals['BC']}")
-
-            # END STOCK
-            bg9_formula = f"=H{write_row}+SUM(R{write_row}:Z{write_row})+SUM(AJ{write_row}:AZ{write_row})"
-            bh9_formula = f"=I{write_row}+SUM(AB{write_row}:AH{write_row})"
-            bi9_formula = f"=BG{write_row}+BH{write_row}"
-            
-            ws.cell(row=write_row, column=get_column_index("BG"), value=bg9_formula)
             ws.cell(row=write_row, column=get_column_index("BH"), value=bh9_formula)
             ws.cell(row=write_row, column=get_column_index("BI"), value=bi9_formula)
+            ws.cell(row=write_row, column=get_column_index("BJ"), value=bj9_formula)
 
-            # SAP - MB5B
-            bj9 = sheet_cache.get_mb5b(material, plant, "GS")
-            bk9 = sheet_cache.get_mb5b(material, plant, "BS")
-            bl9_formula = f"=SUM(BJ{write_row}:BK{write_row})"
+            # SAP - MB5B (shifted to BK, BL, BM)
+            bk9 = sheet_cache.get_mb5b(material, plant, "GS")
+            bl9 = sheet_cache.get_mb5b(material, plant, "BS")
+            bm9_formula = f"=SUM(BK{write_row}:BL{write_row})"
             
-            ws.cell(row=write_row, column=get_column_index("BJ"), value=bj9)
             ws.cell(row=write_row, column=get_column_index("BK"), value=bk9)
-            ws.cell(row=write_row, column=get_column_index("BL"), value=bl9_formula)
-
-            # DIFF
-            bm9_formula = f"=BG{write_row}-BJ{write_row}"
-            bn9_formula = f"=BH{write_row}-BK{write_row}"
-            bo9_formula = f"=BM{write_row}+BN{write_row}"
-            
+            ws.cell(row=write_row, column=get_column_index("BL"), value=bl9)
             ws.cell(row=write_row, column=get_column_index("BM"), value=bm9_formula)
+
+            # DIFF (shifted to BN, BO, BP)
+            bn9_formula = f"=BH{write_row}-BK{write_row}"
+            bo9_formula = f"=BI{write_row}-BL{write_row}"
+            bp9_formula = f"=BN{write_row}+BO{write_row}"
+            
             ws.cell(row=write_row, column=get_column_index("BN"), value=bn9_formula)
             ws.cell(row=write_row, column=get_column_index("BO"), value=bo9_formula)
-
-            bp9_formula = f"=P{write_row}-BO{write_row}"
             ws.cell(row=write_row, column=get_column_index("BP"), value=bp9_formula)
 
-            # STOCK - EDS
-            br9 = sheet_cache.get_eds(material, plant, "GS")
-            bs9 = sheet_cache.get_eds(material, plant, "BS")
-            bt9_formula = f"=BR{write_row}+BS{write_row}"
-            
-            ws.cell(row=write_row, column=get_column_index("BR"), value=br9)
-            ws.cell(row=write_row, column=get_column_index("BS"), value=bs9)
-            ws.cell(row=write_row, column=get_column_index("BT"), value=bt9_formula)
+            bq9_formula = f"=P{write_row}-BP{write_row}"
+            ws.cell(row=write_row, column=get_column_index("BQ"), value=bq9_formula)
 
-            bu9_formula = f"=BJ{write_row}-BR{write_row}"
-            bv9_formula = f"=BK{write_row}-BS{write_row}"
-            bw9_formula = f"=BU{write_row}+BV{write_row}"
+            # STOCK - EDS (shifted to BS, BT, BU)
+            bs9 = sheet_cache.get_eds(material, plant, "GS")
+            bt9 = sheet_cache.get_eds(material, plant, "BS")
+            bu9_formula = f"=BS{write_row}+BT{write_row}"
             
+            ws.cell(row=write_row, column=get_column_index("BS"), value=bs9)
+            ws.cell(row=write_row, column=get_column_index("BT"), value=bt9)
             ws.cell(row=write_row, column=get_column_index("BU"), value=bu9_formula)
+
+            bv9_formula = f"=BK{write_row}-BS{write_row}"
+            bw9_formula = f"=BL{write_row}-BT{write_row}"
+            bx9_formula = f"=BV{write_row}+BW{write_row}"
+            
             ws.cell(row=write_row, column=get_column_index("BV"), value=bv9_formula)
             ws.cell(row=write_row, column=get_column_index("BW"), value=bw9_formula)
+            ws.cell(row=write_row, column=get_column_index("BX"), value=bx9_formula)
 
             write_row += 1
 
         log(f"Total rows written: {write_row - 9}")
-        
-        # Show lookup stats
-        log(f"  === LOOKUP STATISTICS ===")
-        log(f"  Total calls: {lookup_stats['total_calls']}")
-        log(f"  Successful: {lookup_stats['found']}")
-        log(f"  Not found: {lookup_stats['not_found']}")
-        
-        # Check for negative totals
-        neg_totals = {k: v for k, v in totals.items() if v < 0}
-        if neg_totals:
-            log(f"  === NEGATIVE TOTALS (these are correct!) ===")
-            for col, val in sorted(neg_totals.items()):
-                log(f"    {col}: {val:,.2f}")
-        
-        # CRITICAL: Show BB & BC totals specifically
-        log(f"  === BB & BC TOTALS (641/642) ===")
-        log(f"  BB (641) total across all materials: {totals.get('BB', 0):,.2f}")
-        log(f"  BC (642) total across all materials: {totals.get('BC', 0):,.2f}")
-        
-        # VERIFY against raw MB51
-        mb51_641_total = df_mb51_filtered[
-            (df_mb51_filtered['mv_type'] == '641') & 
-            (df_mb51_filtered['is_empty_storage'] == True)
-        ]['amount'].sum()
-        
-        mb51_642_total = df_mb51_filtered[
-            (df_mb51_filtered['mv_type'] == '642') & 
-            (df_mb51_filtered['is_empty_storage'] == True)
-        ]['amount'].sum()
-        
-        log(f"  === VERIFICATION against raw MB51 ===")
-        log(f"  641 in MB51 (empty storage): {mb51_641_total:,.2f}")
-        log(f"  642 in MB51 (empty storage): {mb51_642_total:,.2f}")
-        
-        bb_diff = totals.get('BB', 0) - mb51_641_total
-        bc_diff = totals.get('BC', 0) - mb51_642_total
-        
-        if abs(bb_diff) > 0.01:
-            log(f"  ⚠️ BB MISMATCH! Difference: {bb_diff:,.2f}")
-            log(f"     Expected: {mb51_641_total:,.2f}")
-            log(f"     Got: {totals.get('BB', 0):,.2f}")
-        else:
-            log(f"  ✓ BB matches MB51!")
-        
-        if abs(bc_diff) > 0.01:
-            log(f"  ⚠️ BC MISMATCH! Difference: {bc_diff:,.2f}")
-            log(f"     Expected: {mb51_642_total:,.2f}")
-            log(f"     Got: {totals.get('BC', 0):,.2f}")
-        else:
-            log(f"  ✓ BC matches MB51!")
-        
-        log(f"  These should match your manual check in MB51!")
-        
-        # Additional verification: count how many materials have non-zero BB/BC
-        bb_nonzero = sum(1 for k, v in totals.items() if k == 'BB' and v != 0)
-        bc_nonzero = sum(1 for k, v in totals.items() if k == 'BC' and v != 0)
-        log(f"  Materials with BB != 0: counted in loop")
-        log(f"  Materials with BC != 0: counted in loop")
 
         # Write formulas
         log("Writing formulas...")
         last_row = write_row - 1
         
+        # UPDATED: sum_columns with new layout
         sum_columns = ["R", "S", "T", "U", "V", "W", "X", "Y", "Z",
                       "AB", "AC", "AD", "AE", "AF", "AG", "AH",
-                      "AJ", "AK", "AL", "AM", "AN", "AO", "AP", "AQ",
-                      "AS", "AT", "AU", "AV", "AW", "AX", "AY", "AZ",
-                      "BB", "BC", "BD"]
+                      "AJ", "AK", "AL", "AM", "AN", "AO", "AP", "AQ", "AR",
+                      "AT", "AU", "AV", "AW", "AX", "AY", "AZ", "BA",
+                      "BC", "BD", "BE"]
         
         for col in sum_columns:
             ws[f"{col}3"] = f"=SUM({col}9:{col}{last_row})"
         
-        # S1
+        # S1 - ctrl balance
         if len(main_file_plants) > 0:
             mb51_for_s1 = df_mb51_filtered[df_mb51_filtered['plant_clean'].isin(main_file_plants)]
             mb51_total_amount = mb51_for_s1['amount'].sum()
         else:
             mb51_total_amount = df_mb51_filtered['amount'].sum()
         
-        sum_r3_bb3 = sum([totals.get(col, 0) for col in sum_columns])
-        s1_value = round(mb51_total_amount - sum_r3_bb3, 2)
+        sum_r3_bc3 = sum([totals.get(col, 0) for col in sum_columns])
+        s1_value = round(mb51_total_amount - sum_r3_bc3, 2)
         
         ws["S1"] = s1_value
         log(f"  S1 = {s1_value:.2f}")
+        log(f"  S1 breakdown: MB51_total={mb51_total_amount:,.2f} - Columns_sum={sum_r3_bc3:,.2f}")
         
-        ws["AX2"] = "=X3+AF3+AO3+AX3"
+        # UPDATED: AY2 formula (Transfer Stock total) - X, AF, AP, AY
+        ws["AY2"] = "=X3+AF3+AP3+AY3"
         
-        # BL2
-        sum_bl = 0.0
+        # BM2 calculation
+        sum_bm = 0.0
         for row in range(9, write_row):
-            cell_val = ws.cell(row=row, column=get_column_index("BL")).value
+            cell_val = ws.cell(row=row, column=get_column_index("BM")).value
             if isinstance(cell_val, (int, float)):
-                sum_bl += cell_val
+                sum_bm += cell_val
         
         sum_mb5b_pq = 0.0
         if '13. MB5B' in sheets_dict:
@@ -1185,32 +1032,32 @@ def main():
             except Exception as e:
                 log(f"  Warning: {str(e)}")
         
-        bl2_value = round(sum_bl - sum_mb5b_pq, 2)
-        ws["BL2"] = bl2_value
-        log(f"  BL2 = {bl2_value:.2f}")
+        bm2_value = round(sum_bm - sum_mb5b_pq, 2)
+        ws["BM2"] = bm2_value
+        log(f"  BM2 = {bm2_value:.2f}")
 
         # Formatting
         log("Formatting...")
-        for i in range(1, 76):
+        for i in range(1, 80):
             ws.column_dimensions[get_column_letter(i)].width = 12
         
         ws.column_dimensions['Q'].width = 2
         ws.column_dimensions['AA'].width = 2
         ws.column_dimensions['AI'].width = 2
-        ws.column_dimensions['AR'].width = 2
-        ws.column_dimensions['BA'].width = 2
-        ws.column_dimensions['BF'].width = 4
+        ws.column_dimensions['AS'].width = 2
+        ws.column_dimensions['BB'].width = 2
+        ws.column_dimensions['BG'].width = 4
 
         ws.freeze_panes = "H9"
 
         for row in range(9, write_row):
-            for col in range(8, 76):
+            for col in range(8, 80):
                 cell = ws.cell(row=row, column=col)
                 if isinstance(cell.value, (int, float)):
                     cell.number_format = '#,##0'
         
         for row in [2, 3]:
-            for col in range(18, 76):
+            for col in range(18, 80):
                 ws.cell(row=row, column=col).number_format = '#,##0'
 
         # Save
@@ -1230,12 +1077,14 @@ def main():
             "report_month": f"{bulan} {tahun}",
             "total_materials": len(grouped_materials),
             "file_size": file_size,
-            "timestamp": timestamp
+            "timestamp": timestamp,
+            "unmapped_count": int(unmapped_count),
+            "no_target_count": int(no_target)
         }
         
         print(json.dumps(result))
         sys.stdout.flush()
-        log("✓ Report completed successfully!")
+        log("✓ Report completed successfully with NEW AI00 column!")
 
     except Exception as e:
         tb = traceback.format_exc()
