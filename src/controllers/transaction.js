@@ -3508,15 +3508,25 @@ module.exports = {
             level === 5 || level === 4 ? { kode_depo: kode } : { [Op.not]: { id: null } },
             {createdAt: {
               [Op.gte]: moment().subtract(6, 'months').startOf('month').toDate()
+            }},
+            {path: {
+              [Op.ne]: null
             }}
           ]
         },
         attributes: [
           [sequelize.fn('DATE_FORMAT', sequelize.col('createdAt'), '%Y-%m'), 'month'],
-          [sequelize.fn('COUNT', sequelize.col('id')), 'total'],
-          [sequelize.fn('SUM', sequelize.literal("CASE WHEN status_dokumen = 1 THEN 1 ELSE 0 END")), 'uploaded'],
-          [sequelize.fn('SUM', sequelize.literal("CASE WHEN status_dokumen = 3 THEN 1 ELSE 0 END")), 'approved'],
-          [sequelize.fn('SUM', sequelize.literal("CASE WHEN status_dokumen = 0 THEN 1 ELSE 0 END")), 'rejected']
+          [sequelize.fn('COUNT', sequelize.col('id')), 'total_upload'],
+          // Pending: status 1 dan 2
+          [sequelize.fn('SUM', sequelize.literal("CASE WHEN status_dokumen IN (1, 2) THEN 1 ELSE 0 END")), 'pending'],
+          // Approved: status 3 dan 5
+          [sequelize.fn('SUM', sequelize.literal("CASE WHEN status_dokumen IN (3, 5) THEN 1 ELSE 0 END")), 'approved'],
+          // Rejected: status 0 dan 6
+          [sequelize.fn('SUM', sequelize.literal("CASE WHEN status_dokumen IN (0, 6) THEN 1 ELSE 0 END")), 'rejected'],
+          // Late Upload: status 4
+          [sequelize.fn('SUM', sequelize.literal("CASE WHEN status_dokumen = 4 THEN 1 ELSE 0 END")), 'late'],
+          // Revisi: status 7
+          [sequelize.fn('SUM', sequelize.literal("CASE WHEN status_dokumen = 7 THEN 1 ELSE 0 END")), 'revisi']
         ],
         group: ['month'],
         order: [[sequelize.literal('month'), 'ASC']],
