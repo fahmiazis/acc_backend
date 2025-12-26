@@ -19,4 +19,7 @@ route.get('/test', trans.testGetDocument)
 route.get('/download/document', trans.downloadDocuments)
 route.get('/download/document/debug', trans.debugDownload)
 
+// get statistic
+route.get('/statistic', trans.getStatistics)
+
 module.exports = route
